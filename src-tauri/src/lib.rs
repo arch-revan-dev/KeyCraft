@@ -43,17 +43,34 @@ pub fn toggle_enabled_from_backend(app: &AppHandle) {
     tray::refresh_tray_visuals(app, layout, new_enabled, cfg.screenshot.enabled);
 }
 
-pub fn should_intercept_print_screen(cfg: &keycraft_core_engine::KeyCraftConfig) -> bool {
+pub fn sync_platform_screenshot_hotkeys(
+    platform: &dyn PlatformBackend,
+    cfg: &keycraft_core_engine::KeyCraftConfig,
+) {
+    let warns = platform.sync_screenshot_hotkeys(
+        cfg.screenshot.enabled,
+        &cfg.hotkeys.screenshot_region,
+        &cfg.hotkeys.screenshot_window,
+        &cfg.hotkeys.screenshot_fullscreen,
+    );
     if !cfg.screenshot.enabled {
-        return false;
+        logger::log_line("INFO", "screenshot hotkeys unregistered (disabled)");
+    } else if warns.is_empty() {
+        logger::log_line(
+            "INFO",
+            &format!(
+                "RegisterHotKey OK: region={}, window={}, fullscreen={}",
+                cfg.hotkeys.screenshot_region,
+                cfg.hotkeys.screenshot_window,
+                cfg.hotkeys.screenshot_fullscreen
+            ),
+        );
+    } else {
+        logger::log_line(
+            "WARN",
+            &format!("RegisterHotKey warnings: {}", warns.join("; ")),
+        );
     }
-    let uses_prtsc = |spec: &str| {
-        let low = spec.to_ascii_lowercase();
-        low.contains("printscreen") || low.contains("prtsc") || low.contains("snapshot")
-    };
-    uses_prtsc(&cfg.hotkeys.screenshot_region)
-        || uses_prtsc(&cfg.hotkeys.screenshot_window)
-        || uses_prtsc(&cfg.hotkeys.screenshot_fullscreen)
 }
 
 pub fn run() {
@@ -63,7 +80,6 @@ pub fn run() {
     let mut initial_cfg = store::load_config();
     let platform_box = create_platform_backend().expect("initialize platform backend");
     initial_cfg.system.autostart = platform_box.is_autostart_enabled();
-    platform_box.set_intercept_print_screen(should_intercept_print_screen(&initial_cfg));
 
     let platform: Arc<dyn PlatformBackend> = Arc::from(platform_box);
     let initial_layout = platform.current_layout();

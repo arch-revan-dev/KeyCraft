@@ -1804,7 +1804,7 @@ dependencies = [
 
 [[package]]
 name = "keycraft"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -1821,7 +1821,7 @@ dependencies = [
 
 [[package]]
 name = "keycraft-core-engine"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "fst",
  "serde",
@@ -1831,14 +1831,14 @@ dependencies = [
 
 [[package]]
 name = "keycraft-dict-builder"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "fst",
 ]
 
 [[package]]
 name = "keycraft-platform"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "crossbeam-channel",
  "keycraft-core-engine",

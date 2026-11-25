@@ -6,10 +6,10 @@ pub mod capture;
 pub mod clipboard;
 pub mod focus;
 pub mod hook;
+pub mod hotkeys;
 pub mod injector;
 pub mod pin_window;
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use crossbeam_channel::{bounded, Receiver};
@@ -24,7 +24,7 @@ use crate::{
 pub struct WindowsBackend {
     focus_cache: Arc<RwLock<FocusContext>>,
     hook_handle: Mutex<Option<hook::HookThreadHandle>>,
-    intercept_prtsc: Arc<AtomicBool>,
+    hotkey_manager: Mutex<Option<hotkeys::GlobalHotkeyManager>>,
 }
 
 impl WindowsBackend {
@@ -36,7 +36,7 @@ impl WindowsBackend {
         Ok(Self {
             focus_cache: Arc::new(RwLock::new(FocusContext::default())),
             hook_handle: Mutex::new(None),
-            intercept_prtsc: Arc::new(AtomicBool::new(true)),
+            hotkey_manager: Mutex::new(None),
         })
     }
 }
@@ -45,7 +45,11 @@ impl PlatformBackend for WindowsBackend {
     fn start_hooks(&self) -> PlatformResult<Receiver<PlatformEvent>> {
         let (tx, rx) = bounded::<PlatformEvent>(256);
         let _focus_thread = focus::spawn_focus_monitor(Arc::clone(&self.focus_cache), tx.clone());
-        let handle = hook::HookThreadHandle::start(tx, Arc::clone(&self.intercept_prtsc));
+        let hk_mgr = hotkeys::GlobalHotkeyManager::start(tx.clone());
+        if let Ok(mut guard) = self.hotkey_manager.lock() {
+            *guard = Some(hk_mgr);
+        }
+        let handle = hook::HookThreadHandle::start(tx);
         if let Ok(mut guard) = self.hook_handle.lock() {
             *guard = Some(handle);
         }
@@ -56,6 +60,11 @@ impl PlatformBackend for WindowsBackend {
         if let Ok(mut guard) = self.hook_handle.lock() {
             if let Some(h) = guard.take() {
                 h.stop();
+            }
+        }
+        if let Ok(mut guard) = self.hotkey_manager.lock() {
+            if let Some(m) = guard.take() {
+                m.stop();
             }
         }
     }
@@ -124,7 +133,18 @@ impl PlatformBackend for WindowsBackend {
         autostart::is_autostart_enabled()
     }
 
-    fn set_intercept_print_screen(&self, intercept: bool) {
-        self.intercept_prtsc.store(intercept, Ordering::Relaxed);
+    fn sync_screenshot_hotkeys(
+        &self,
+        enabled: bool,
+        region: &str,
+        window: &str,
+        fullscreen: &str,
+    ) -> Vec<String> {
+        if let Ok(guard) = self.hotkey_manager.lock() {
+            if let Some(mgr) = guard.as_ref() {
+                return mgr.sync(enabled, region, window, fullscreen);
+            }
+        }
+        Vec::new()
     }
 }

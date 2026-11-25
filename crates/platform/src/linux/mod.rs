@@ -93,5 +93,13 @@ impl PlatformBackend for LinuxBackend {
         false
     }
 
-    fn set_intercept_print_screen(&self, _intercept: bool) {}
+    fn sync_screenshot_hotkeys(
+        &self,
+        _enabled: bool,
+        _region: &str,
+        _window: &str,
+        _fullscreen: &str,
+    ) -> Vec<String> {
+        Vec::new()
+    }
 }

@@ -100,8 +100,21 @@
   }
 
   function handleKeyUp(e: KeyboardEvent) {
-    if (!recording || !pendingLoneMod) return;
-    if (e.code === 'AltRight' || e.code === 'AltLeft') {
+    if (!recording) return;
+    // Windows / WebView2 often fires PrintScreen ONLY on keyup (never keydown)
+    if (e.code === 'PrintScreen' || e.key === 'PrintScreen') {
+      e.preventDefault();
+      e.stopPropagation();
+      const parts: string[] = [];
+      if (e.ctrlKey) parts.push('Ctrl');
+      if (e.altKey) parts.push('Alt');
+      if (e.shiftKey) parts.push('Shift');
+      if (e.metaKey) parts.push('Win');
+      parts.push('PrintScreen');
+      finish(parts.join('+'));
+      return;
+    }
+    if (pendingLoneMod && (e.code === 'AltRight' || e.code === 'AltLeft')) {
       e.preventDefault();
       finish(pendingLoneMod);
     }

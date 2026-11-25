@@ -156,33 +156,17 @@ fn matches_lone_tap_hotkey(spec: &str, vk: u32, was_lone_tap: bool) -> bool {
     hk.lone_modifier && hk.vk == vk
 }
 
-fn check_screenshot_hotkeys(
-    hotkeys: &HotkeyConfig,
-    vk: u32,
-    ctrl: bool,
-    alt: bool,
-    shift: bool,
-    win: bool,
-) -> Option<&'static str> {
-    if matches_keydown_hotkey(&hotkeys.screenshot_region, vk, ctrl, alt, shift, win) {
-        return Some("region");
-    }
-    if matches_keydown_hotkey(&hotkeys.screenshot_window, vk, ctrl, alt, shift, win) {
-        return Some("window");
-    }
-    if matches_keydown_hotkey(&hotkeys.screenshot_fullscreen, vk, ctrl, alt, shift, win) {
-        return Some("fullscreen");
-    }
-    None
-}
-
 pub fn start_daemon(app: AppHandle) {
     let rx = {
         let state = app.state::<AppState>();
-        match state.platform.start_hooks() {
+        let rx = match state.platform.start_hooks() {
             Ok(rx) => rx,
             Err(_) => return,
+        };
+        if let Ok(eng) = state.engine.lock() {
+            crate::sync_platform_screenshot_hotkeys(state.platform.as_ref(), eng.config());
         }
+        rx
     };
 
     std::thread::Builder::new()
@@ -244,6 +228,16 @@ pub fn start_daemon(app: AppHandle) {
                             }
                         }
                     }
+                    PlatformEvent::ScreenshotHotkey(mode) => {
+                        let shot_enabled = state
+                            .engine
+                            .lock()
+                            .map(|e| e.config().screenshot.enabled)
+                            .unwrap_or(true);
+                        if shot_enabled {
+                            windows_mgr::open_screenshot_overlay_async(app.clone(), mode);
+                        }
+                    }
                     PlatformEvent::KeyUp {
                         vk_code,
                         was_lone_tap,
@@ -281,30 +275,11 @@ pub fn start_daemon(app: AppHandle) {
                         layout,
                         ..
                     } => {
-                        let (enabled, screenshot_enabled, hotkeys) = state
+                        let (enabled, hotkeys) = state
                             .engine
                             .lock()
-                            .map(|e| {
-                                (
-                                    e.config().enabled,
-                                    e.config().screenshot.enabled,
-                                    e.config().hotkeys.clone(),
-                                )
-                            })
-                            .unwrap_or((true, true, HotkeyConfig::default()));
-
-                        // Screenshot hotkeys work ONLY when the built-in screenshotter is enabled
-                        if screenshot_enabled {
-                            if let Some(mode) =
-                                check_screenshot_hotkeys(&hotkeys, vk_code, ctrl, alt, shift, win)
-                            {
-                                windows_mgr::open_screenshot_overlay_async(
-                                    app.clone(),
-                                    mode.to_string(),
-                                );
-                                continue;
-                            }
-                        }
+                            .map(|e| (e.config().enabled, e.config().hotkeys.clone()))
+                            .unwrap_or((true, HotkeyConfig::default()));
 
                         if !enabled {
                             continue;

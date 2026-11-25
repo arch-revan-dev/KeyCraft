@@ -72,9 +72,7 @@ pub fn save_config(
 
     store::save_config(&config)?;
     let _ = state.platform.set_autostart(autostart);
-    state
-        .platform
-        .set_intercept_print_screen(crate::should_intercept_print_screen(&config));
+    crate::sync_platform_screenshot_hotkeys(state.platform.as_ref(), &config);
 
     {
         let mut eng = state.engine.lock().map_err(|_| "engine lock poisoned")?;

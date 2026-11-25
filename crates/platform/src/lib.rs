@@ -91,6 +91,7 @@ pub enum PlatformEvent {
     MouseClick,
     FocusChanged(FocusContext),
     LayoutChanged(Language),
+    ScreenshotHotkey(String),
 }
 
 /// Captured RGBA image buffer plus virtual screen origin and window rects for snap capture.
@@ -165,8 +166,15 @@ pub trait PlatformBackend: Send + Sync {
     /// Check whether OS autostart is currently enabled.
     fn is_autostart_enabled(&self) -> bool;
 
-    /// Control whether the low-level hook swallows `PrintScreen` so the OS Snipping Tool does not conflict.
-    fn set_intercept_print_screen(&self, intercept: bool);
+    /// Register or unregister global OS screenshot hotkeys (`RegisterHotKey` on Windows).
+    /// Returns a list of any registration warnings (empty if all succeeded).
+    fn sync_screenshot_hotkeys(
+        &self,
+        enabled: bool,
+        region: &str,
+        window: &str,
+        fullscreen: &str,
+    ) -> Vec<String>;
 }
 
 /// Construct the native backend for the current target OS.
