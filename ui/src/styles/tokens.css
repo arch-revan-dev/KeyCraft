@@ -1,0 +1,75 @@
+/* KeyCraft Design Tokens — Strict Anti-Slop Contract
+ * Light Theme: Warm Studio Paper
+ * Dark Theme:  Deep Tactile Graphite
+ * Accent:      Cobalt (#2563EB / #4F8BFF) — reserved strictly for active controls, focus & primary actions
+ */
+
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+
+  /* 4px modular spacing scale */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-fast: 120ms;
+  --dur-med: 150ms;
+
+  /* Warm Studio Paper (Light default) */
+  --bg-sidebar: #F5F5F4;
+  --bg-content: #FAFAF9;
+  --bg-surface: #FFFFFF;
+  --bg-surface-hover: #F4F4F5;
+  --bg-control: #ECECEA;
+  --bg-kbd: #FFFFFF;
+  --border-subtle: rgba(0, 0, 0, 0.07);
+  --border-strong: rgba(0, 0, 0, 0.14);
+  --text-primary: #18181B;
+  --text-secondary: #636369;
+  --text-tertiary: #9CA3AF;
+  --accent: #2563EB;
+  --accent-hover: #1D4ED8;
+  --accent-soft: rgba(37, 99, 235, 0.10);
+  --accent-fg: #FFFFFF;
+  --semantic-success: #15803D;
+  --semantic-success-soft: rgba(21, 128, 61, 0.10);
+  --semantic-danger: #B91C1C;
+  --semantic-danger-soft: rgba(185, 28, 28, 0.09);
+  --shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-kbd: 0 1px 0 rgba(0, 0, 0, 0.14);
+}
+
+:root[data-theme="dark"] {
+  /* Deep Tactile Graphite */
+  --bg-sidebar: #161618;
+  --bg-content: #1C1C1F;
+  --bg-surface: #232327;
+  --bg-surface-hover: #2A2A2F;
+  --bg-control: #2E2E34;
+  --bg-kbd: #2B2B30;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --text-primary: #F4F4F5;
+  --text-secondary: #A1A1AA;
+  --text-tertiary: #71717A;
+  --accent: #4F8BFF;
+  --accent-hover: #6BA0FF;
+  --accent-soft: rgba(79, 139, 255, 0.14);
+  --accent-fg: #FFFFFF;
+  --semantic-success: #4ADE80;
+  --semantic-success-soft: rgba(74, 222, 128, 0.12);
+  --semantic-danger: #F87171;
+  --semantic-danger-soft: rgba(248, 113, 113, 0.12);
+  --shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.22);
+  --shadow-kbd: 0 1px 0 rgba(0, 0, 0, 0.45);
+}

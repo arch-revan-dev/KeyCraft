@@ -1,0 +1,13 @@
+[package]
+name = "keycraft-core-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+fst.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

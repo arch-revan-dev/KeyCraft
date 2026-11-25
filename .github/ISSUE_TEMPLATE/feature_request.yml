@@ -1,0 +1,19 @@
+name: Предложить улучшение
+description: Новая функция, правило для словаря или поддержка новой платформы (macOS / Linux)
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Какую задачу это решает?
+      placeholder: Опишите сценарий использования.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Предлагаемое решение
+      description: Учитывайте ограничения проекта — 100% офлайн, 0% ИИ и сети, < 2 мс.
+    validations:
+      required: true

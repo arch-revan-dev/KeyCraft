@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = [
+    "tools/dict-builder",
+    "crates/core-engine",
+    "crates/platform",
+    "src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+fst = "0.4"
+zeroize = { version = "1.8", features = ["derive"] }
+crossbeam-channel = "0.5"
+png = "0.17"
+tiny-skia = "0.11"
+directories = "6.0"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

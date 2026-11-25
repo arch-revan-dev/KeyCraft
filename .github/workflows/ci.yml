@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify-windows:
+    name: Build, Clippy, Tests & Offline Audit (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Check and build Svelte 5 UI
+        working-directory: ui
+        run: |
+          npm ci
+          npm run check
+          npm run build
+
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Clippy (-D warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Workspace tests (72+ cases)
+        run: cargo test --workspace
+
+      - name: Verify zero runtime HTTP/network client crates
+        shell: pwsh
+        run: |
+          $hits = cargo tree -e normal -p keycraft | Select-String -Pattern "reqwest|hyper|ureq|surf|isahc|tokio-tungstenite"
+          if ($hits) {
+            Write-Error "Forbidden runtime network dependency detected:`n$hits"
+            exit 1
+          }
+          Write-Host "Verified: zero runtime HTTP/network clients in keycraft."

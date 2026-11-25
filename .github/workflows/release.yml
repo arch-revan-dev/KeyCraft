@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release-windows:
+    name: Build & Publish Windows x64 Release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Build UI bundle
+        working-directory: ui
+        run: |
+          npm ci
+          npm run check
+          npm run build
+
+      - name: Setup Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test --workspace
+
+      - name: Build release binary
+        run: cargo build --release -p keycraft
+
+      - name: Package portable artifacts & SHA256SUMS
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          New-Item -ItemType Directory -Force -Path dist-release/portable | Out-Null
+          $exeName = "KeyCraft-$tag-windows-x64.exe"
+          $zipName = "KeyCraft-$tag-windows-x64-portable.zip"
+          Copy-Item "target/release/keycraft.exe" "dist-release/$exeName"
+          Copy-Item "target/release/keycraft.exe" "dist-release/portable/KeyCraft.exe"
+          Copy-Item "README.md" "dist-release/portable/README.md"
+          Copy-Item "LICENSE" "dist-release/portable/LICENSE"
+          Compress-Archive -Path "dist-release/portable/*" -DestinationPath "dist-release/$zipName" -Force
+
+          $hashes = @()
+          foreach ($f in @($exeName, $zipName)) {
+            $h = (Get-FileHash "dist-release/$f" -Algorithm SHA256).Hash.ToLower()
+            $hashes += "$h  $f"
+          }
+          $hashes | Set-Content -Path "dist-release/SHA256SUMS.txt" -Encoding UTF8
+
+      - name: Upload release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag `
+              "dist-release/KeyCraft-$tag-windows-x64.exe" `
+              "dist-release/KeyCraft-$tag-windows-x64-portable.zip" `
+              "dist-release/SHA256SUMS.txt" --clobber
+          } else {
+            gh release create $tag `
+              "dist-release/KeyCraft-$tag-windows-x64.exe" `
+              "dist-release/KeyCraft-$tag-windows-x64-portable.zip" `
+              "dist-release/SHA256SUMS.txt" `
+              --title "KeyCraft $tag" --generate-notes
+          }

@@ -1,0 +1,32 @@
+name: Сообщить об ошибке
+description: Баг-репорт по раскладке, опечаткам, скриншотеру или работе в конкретном приложении
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Версия KeyCraft и ОС
+      placeholder: "v0.1.0, Windows 11 24H2"
+    validations:
+      required: true
+  - type: input
+    id: app
+    attributes:
+      label: Целевое приложение (если баг связан с конкретным окном)
+      placeholder: "Telegram.exe / Chrome / Песочница"
+  - type: textarea
+    id: repro
+    attributes:
+      label: Шаги воспроизведения
+      placeholder: |
+        1. Ввести `...` в раскладке EN
+        2. Нажать Space
+        3. Ожидалось: `...`, получено: `...`
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Дополнительные детали
+      description: Скриншот или фрагмент конфигурации (без паролей и личных данных).
