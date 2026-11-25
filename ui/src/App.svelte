@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { RotateCcw } from 'lucide-svelte';
   import Sidebar from './components/Sidebar.svelte';
   import LayoutTyposView from './views/LayoutTyposView.svelte';
   import DictionaryView from './views/DictionaryView.svelte';
@@ -87,6 +88,44 @@
     next.enabled = !next.enabled;
     handleUpdate(next);
   }
+
+  function handleResetCurrentSection() {
+    const defaults = createDefaultConfig();
+    const next = cloneConfig(config);
+    switch (activeSection) {
+      case 'layout':
+        next.layout = defaults.layout;
+        next.typos = defaults.typos;
+        next.hotkeys.undo_last_action = defaults.hotkeys.undo_last_action;
+        break;
+      case 'dictionary':
+        next.dictionary = [];
+        break;
+      case 'snippets':
+        next.snippets = defaults.snippets;
+        break;
+      case 'lists':
+        next.lists_case = defaults.lists_case;
+        next.hotkeys.cycle_case = defaults.hotkeys.cycle_case;
+        break;
+      case 'apps':
+        next.app_rules = defaults.app_rules;
+        break;
+      case 'screenshot':
+        next.screenshot = defaults.screenshot;
+        next.hotkeys.screenshot_region = defaults.hotkeys.screenshot_region;
+        next.hotkeys.screenshot_window = defaults.hotkeys.screenshot_window;
+        next.hotkeys.screenshot_fullscreen = defaults.hotkeys.screenshot_fullscreen;
+        break;
+      case 'hotkeys':
+        next.hotkeys = defaults.hotkeys;
+        break;
+      case 'system':
+        handleUpdate(defaults);
+        return;
+    }
+    handleUpdate(next);
+  }
 </script>
 
 <div class="shell">
@@ -103,9 +142,22 @@
         <h1 class="section-title">{SECTION_META[activeSection].title}</h1>
         <p class="section-sub">{SECTION_META[activeSection].subtitle}</p>
       </div>
-      {#if saveBanner}
-        <span class="save-chip">{saveBanner}</span>
-      {/if}
+      <div class="header-actions">
+        {#if saveBanner}
+          <span class="save-chip">{saveBanner}</span>
+        {/if}
+        <button
+          type="button"
+          class="btn btn-ghost"
+          title={activeSection === 'system'
+            ? 'Сбросить все настройки программы по умолчанию'
+            : 'Сбросить настройки текущего раздела по умолчанию'}
+          onclick={handleResetCurrentSection}
+        >
+          <RotateCcw size={13} strokeWidth={1.5} />
+          {activeSection === 'system' ? 'Сбросить всё' : 'По умолчанию'}
+        </button>
+      </div>
     </header>
 
     <div class="content-scroll">
@@ -183,6 +235,13 @@
     font-size: 12px;
     color: var(--text-secondary);
     line-height: 1.3;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
   }
 
   .save-chip {

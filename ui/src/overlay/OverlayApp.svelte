@@ -40,6 +40,8 @@
   let canvasEl = $state<HTMLCanvasElement | null>(null);
   let loupeEl = $state<HTMLCanvasElement | null>(null);
   let bgSource: HTMLImageElement | HTMLCanvasElement | null = null;
+  let scaleX = $state(1);
+  let scaleY = $state(1);
 
   let meta = $state<CaptureMetadata | null>(null);
   let selection = $state<SelectionBox | null>(null);
@@ -105,26 +107,38 @@
       activeColor = m.default_color || '#DC2626';
       strokeWidth = m.default_stroke_width || 3;
 
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      if (canvasEl) {
-        canvasEl.width = w;
-        canvasEl.height = h;
-      }
+      const cssW = window.innerWidth;
+      const cssH = window.innerHeight;
+      const dpr = window.devicePixelRatio || 1;
 
       if (isTauriRuntime()) {
         const dataUrl = await getCaptureImageDataUrl();
         const img = new Image();
         img.onload = () => {
           bgSource = img;
-          initSelectionForMode(m, w, h);
+          const physW = img.naturalWidth || Math.round(cssW * dpr);
+          const physH = img.naturalHeight || Math.round(cssH * dpr);
+          if (canvasEl) {
+            canvasEl.width = physW;
+            canvasEl.height = physH;
+          }
+          scaleX = physW / Math.max(1, cssW);
+          scaleY = physH / Math.max(1, cssH);
+          initSelectionForMode(m, cssW, cssH, scaleX, scaleY);
           redraw();
         };
         img.src = dataUrl || `http://keycraft-capture.localhost/frame?t=${Date.now()}`;
       } else {
-        bgSource = createDevPreviewBackdrop(w, h);
-        // In dev preview, pre-select a clean region so toolbar is immediately inspectable
-        selection = { x: 96, y: 74, w: Math.min(540, w - 192), h: Math.min(240, h - 200) };
+        const physW = Math.round(cssW * dpr);
+        const physH = Math.round(cssH * dpr);
+        if (canvasEl) {
+          canvasEl.width = physW;
+          canvasEl.height = physH;
+        }
+        scaleX = physW / Math.max(1, cssW);
+        scaleY = physH / Math.max(1, cssH);
+        bgSource = createDevPreviewBackdrop(physW, physH);
+        selection = { x: 96, y: 74, w: Math.min(540, cssW - 192), h: Math.min(240, cssH - 200) };
         phase = 'annotating';
         redraw();
       }
@@ -156,17 +170,32 @@
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  function initSelectionForMode(m: CaptureMetadata, vw: number, vh: number) {
+  function initSelectionForMode(
+    m: CaptureMetadata,
+    cssW: number,
+    cssH: number,
+    sx: number,
+    sy: number
+  ) {
     if (m.mode === 'fullscreen') {
-      selection = { x: 0, y: 0, w: vw, h: vh };
+      selection = { x: 0, y: 0, w: cssW, h: cssH };
       phase = 'annotating';
     } else if (m.mode === 'window' && m.active_window_rect) {
+      // Convert physical DWM extended frame bounds cleanly into CSS logical pixels
       const r = m.active_window_rect;
+      const rawX = (r.x - m.origin_x) / sx;
+      const rawY = (r.y - m.origin_y) / sy;
+      const rawW = r.width / sx;
+      const rawH = r.height / sy;
+      const x = Math.max(0, Math.min(cssW - 16, rawX));
+      const y = Math.max(0, Math.min(cssH - 16, rawY));
+      const right = Math.min(cssW, rawX + rawW);
+      const bottom = Math.min(cssH, rawY + rawH);
       selection = {
-        x: Math.max(0, r.x - m.origin_x),
-        y: Math.max(0, r.y - m.origin_y),
-        w: Math.min(vw, r.width),
-        h: Math.min(vh, r.height),
+        x,
+        y,
+        w: Math.max(16, right - x),
+        h: Math.max(16, bottom - y),
       };
       phase = 'annotating';
     }
@@ -177,21 +206,31 @@
     const ctx = canvasEl.getContext('2d');
     if (!ctx) return;
 
-    const w = canvasEl.width;
-    const h = canvasEl.height;
-    ctx.clearRect(0, 0, w, h);
-    ctx.drawImage(bgSource, 0, 0, w, h);
+    const physW = canvasEl.width;
+    const physH = canvasEl.height;
+    const cssW = physW / scaleX;
+    const cssH = physH / scaleY;
+
+    // 1. Draw desktop capture at 1:1 native physical pixel resolution (zero downscaling/blur)
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, physW, physH);
+    ctx.drawImage(bgSource, 0, 0, physW, physH);
+
+    // 2. Switch to CSS logical coordinates scaled by DPR for crisp overlay masks & annotations
+    ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+    ctx.imageSmoothingEnabled = true;
 
     // Dim outside selected area
     ctx.fillStyle = 'rgba(12, 12, 14, 0.48)';
     if (!selection || selection.w < 2 || selection.h < 2) {
-      ctx.fillRect(0, 0, w, h);
+      ctx.fillRect(0, 0, cssW, cssH);
     } else {
       const s = selection;
-      ctx.fillRect(0, 0, w, s.y);
-      ctx.fillRect(0, s.y + s.h, w, h - (s.y + s.h));
+      ctx.fillRect(0, 0, cssW, s.y);
+      ctx.fillRect(0, s.y + s.h, cssW, cssH - (s.y + s.h));
       ctx.fillRect(0, s.y, s.x, s.h);
-      ctx.fillRect(s.x + s.w, s.y, w - (s.x + s.w), s.h);
+      ctx.fillRect(s.x + s.w, s.y, cssW - (s.x + s.w), s.h);
 
       // Render annotations clipped inside selection
       ctx.save();
@@ -199,10 +238,10 @@
       ctx.rect(s.x, s.y, s.w, s.h);
       ctx.clip();
       for (const item of annotations) {
-        drawAnnotation(ctx, item);
+        drawAnnotation(ctx, item, 0, 0, scaleX, scaleY);
       }
       if (draftItem) {
-        drawAnnotation(ctx, draftItem);
+        drawAnnotation(ctx, draftItem, 0, 0, scaleX, scaleY);
       }
       ctx.restore();
 
@@ -224,8 +263,9 @@
     const size = 104;
     const zoom = 6;
     const sample = Math.floor(size / zoom);
-    const sx = Math.round(cursor.x - sample / 2);
-    const sy = Math.round(cursor.y - sample / 2);
+    // Sample directly from physical desktop pixels
+    const sx = Math.round(cursor.x * scaleX - sample / 2);
+    const sy = Math.round(cursor.y * scaleY - sample / 2);
 
     lctx.imageSmoothingEnabled = false;
     lctx.clearRect(0, 0, size, size);
@@ -387,7 +427,7 @@
 
   function renderExport(): string | null {
     if (!bgSource || !selection || selection.w < 2 || selection.h < 2) return null;
-    return exportSelectionToPng(bgSource, selection, annotations);
+    return exportSelectionToPng(bgSource, selection, annotations, scaleX, scaleY);
   }
 
   async function handleCopy() {
@@ -403,8 +443,8 @@
   async function handlePin() {
     const png = renderExport();
     if (!png || !selection) return;
-    const sx = (meta?.origin_x ?? 0) + Math.round(selection.x);
-    const sy = (meta?.origin_y ?? 0) + Math.round(selection.y);
+    const sx = (meta?.origin_x ?? 0) + Math.round(selection.x * scaleX);
+    const sy = (meta?.origin_y ?? 0) + Math.round(selection.y * scaleY);
     await screenshotPinPng(png, sx, sy);
   }
 
@@ -435,7 +475,7 @@
       class="dim-pill mono tabular"
       style={`left:${Math.max(8, selection.x)}px;top:${Math.max(8, selection.y - 26)}px`}
     >
-      {Math.round(selection.w)} × {Math.round(selection.h)}
+      {Math.round(selection.w * scaleX)} × {Math.round(selection.h * scaleY)}
     </div>
   {/if}
 
@@ -445,7 +485,9 @@
       style={`left:${Math.min(window.innerWidth - 124, cursor.x + 18)}px;top:${Math.min(window.innerHeight - 134, cursor.y + 18)}px`}
     >
       <canvas bind:this={loupeEl} width={104} height={104}></canvas>
-      <div class="loupe-coords mono tabular">{Math.round(cursor.x)}, {Math.round(cursor.y)}</div>
+      <div class="loupe-coords mono tabular">
+        {Math.round(cursor.x * scaleX)}, {Math.round(cursor.y * scaleY)}
+      </div>
     </div>
   {/if}
 

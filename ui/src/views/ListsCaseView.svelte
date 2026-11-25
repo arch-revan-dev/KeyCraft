@@ -28,6 +28,7 @@
     >
       <KeyRecorder
         value={config.hotkeys.cycle_case}
+        defaultValue="Alt+Shift+U"
         onchange={(v) => patch((c) => (c.hotkeys.cycle_case = v))}
       />
     </SettingRow>

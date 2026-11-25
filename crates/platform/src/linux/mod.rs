@@ -92,4 +92,6 @@ impl PlatformBackend for LinuxBackend {
     fn is_autostart_enabled(&self) -> bool {
         false
     }
+
+    fn set_intercept_print_screen(&self, _intercept: bool) {}
 }

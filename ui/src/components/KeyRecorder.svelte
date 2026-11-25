@@ -1,11 +1,19 @@
 <script lang="ts">
+  import { RotateCcw } from 'lucide-svelte';
+
   interface Props {
     value: string;
+    defaultValue?: string;
     allowLoneModifier?: boolean;
     onchange?: (next: string) => void;
   }
 
-  let { value = $bindable(''), allowLoneModifier = false, onchange }: Props = $props();
+  let {
+    value = $bindable(''),
+    defaultValue,
+    allowLoneModifier = false,
+    onchange,
+  }: Props = $props();
 
   let recording = $state(false);
   let pendingLoneMod = $state<string | null>(null);
@@ -16,6 +24,8 @@
       .map((s) => s.trim())
       .filter(Boolean)
   );
+
+  const isModified = $derived(defaultValue !== undefined && value !== defaultValue);
 
   function formatToken(token: string): string {
     switch (token) {
@@ -46,10 +56,20 @@
     onchange?.(next);
   }
 
+  function resetToDefault() {
+    if (defaultValue === undefined) return;
+    finish(defaultValue);
+  }
+
   function handleKeyDown(e: KeyboardEvent) {
     if (!recording) return;
     e.preventDefault();
     e.stopPropagation();
+
+    if ((e.key === 'Backspace' || e.key === 'Delete') && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      finish('');
+      return;
+    }
 
     if (allowLoneModifier && (e.code === 'AltRight' || e.code === 'AltLeft')) {
       pendingLoneMod = e.code === 'AltRight' ? 'RAlt' : 'LAlt';
@@ -88,36 +108,56 @@
   }
 </script>
 
-<button
-  type="button"
-  class="recorder"
-  class:recording
-  onclick={startRecording}
-  onkeydown={handleKeyDown}
-  onkeyup={handleKeyUp}
-  onblur={() => {
-    recording = false;
-    pendingLoneMod = null;
-  }}
-  title="Нажмите, чтобы назначить сочетание клавиш"
->
-  {#if recording}
-    <span class="rec-prompt">Нажмите сочетание…</span>
-  {:else if tokens.length === 0}
-    <span class="rec-empty">Не назначено</span>
-  {:else}
-    <span class="kbd-group">
-      {#each tokens as tok, i}
-        {#if i > 0}
-          <span class="plus">+</span>
-        {/if}
-        <kbd class="kbd">{formatToken(tok)}</kbd>
-      {/each}
-    </span>
+<div class="recorder-wrap">
+  <button
+    type="button"
+    class="recorder"
+    class:recording
+    onclick={startRecording}
+    onkeydown={handleKeyDown}
+    onkeyup={handleKeyUp}
+    onblur={() => {
+      recording = false;
+      pendingLoneMod = null;
+    }}
+    title="Нажмите, чтобы назначить сочетание (Backspace — очистить)"
+  >
+    {#if recording}
+      <span class="rec-prompt">Нажмите сочетание…</span>
+    {:else if tokens.length === 0}
+      <span class="rec-empty">Не назначено</span>
+    {:else}
+      <span class="kbd-group">
+        {#each tokens as tok, i}
+          {#if i > 0}
+            <span class="plus">+</span>
+          {/if}
+          <kbd class="kbd">{formatToken(tok)}</kbd>
+        {/each}
+      </span>
+    {/if}
+  </button>
+
+  {#if isModified}
+    <button
+      type="button"
+      class="reset-btn"
+      title={`Сбросить по умолчанию (${defaultValue})`}
+      aria-label="Сбросить горячую клавишу по умолчанию"
+      onclick={resetToDefault}
+    >
+      <RotateCcw size={13} strokeWidth={1.5} />
+    </button>
   {/if}
-</button>
+</div>
 
 <style>
+  .recorder-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
   .recorder {
     display: inline-flex;
     align-items: center;
@@ -165,5 +205,28 @@
   .plus {
     font-size: 11px;
     color: var(--text-tertiary);
+  }
+
+  .reset-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease),
+      border-color var(--dur-fast) var(--ease);
+  }
+
+  .reset-btn:hover {
+    background: var(--bg-surface-hover);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
   }
 </style>

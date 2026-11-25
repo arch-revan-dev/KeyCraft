@@ -5,7 +5,7 @@
   import Toggle from '../components/Toggle.svelte';
   import SegmentedControl from '../components/SegmentedControl.svelte';
   import KeyRecorder from '../components/KeyRecorder.svelte';
-  import { cloneConfig, triggerScreenshot } from '../lib/ipc';
+  import { cloneConfig, createDefaultConfig, triggerScreenshot } from '../lib/ipc';
   import type { KeyCraftConfig, RuntimeStatus } from '../lib/types';
 
   interface Props {
@@ -17,6 +17,7 @@
   let { config, status, onupdate }: Props = $props();
 
   const PALETTE = ['#DC2626', '#D97706', '#16A34A', '#2563EB', '#18181B', '#FFFFFF'];
+  const DEFAULT_HOTKEYS = createDefaultConfig().hotkeys;
 
   function patch(mutator: (draft: KeyCraftConfig) => void) {
     const next = cloneConfig(config);
@@ -133,21 +134,24 @@
   </SettingGroup>
 
   <SettingGroup title="Горячие клавиши скриншотера">
-    <SettingRow title="Захват области" description="Выделение произвольной рамки с панелью аннотаций и размытия">
+    <SettingRow title="Захват области" description="При включённом скриншотере PrintScreen перехватывается вместо Ножниц Windows">
       <KeyRecorder
         value={config.hotkeys.screenshot_region}
+        defaultValue={DEFAULT_HOTKEYS.screenshot_region}
         onchange={(v) => patch((c) => (c.hotkeys.screenshot_region = v))}
       />
     </SettingRow>
     <SettingRow title="Захват активного окна" description="Автоматическое выделение границ окна без невидимой тени Windows">
       <KeyRecorder
         value={config.hotkeys.screenshot_window}
+        defaultValue={DEFAULT_HOTKEYS.screenshot_window}
         onchange={(v) => patch((c) => (c.hotkeys.screenshot_window = v))}
       />
     </SettingRow>
     <SettingRow title="Захват всего экрана" description="Полный снимок виртуального рабочего стола">
       <KeyRecorder
         value={config.hotkeys.screenshot_fullscreen}
+        defaultValue={DEFAULT_HOTKEYS.screenshot_fullscreen}
         onchange={(v) => patch((c) => (c.hotkeys.screenshot_fullscreen = v))}
       />
     </SettingRow>

@@ -104,6 +104,7 @@
     >
       <KeyRecorder
         value={config.hotkeys.undo_last_action}
+        defaultValue="Escape"
         allowLoneModifier={true}
         onchange={(v) => patch((c) => (c.hotkeys.undo_last_action = v))}
       />

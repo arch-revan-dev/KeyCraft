@@ -12,7 +12,7 @@ use crossbeam_channel::Sender;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicodeEx, VK_CONTROL, VK_LMENU,
-    VK_LWIN, VK_MENU, VK_RMENU, VK_RWIN, VK_SHIFT,
+    VK_LWIN, VK_MENU, VK_RMENU, VK_RWIN, VK_SHIFT, VK_SNAPSHOT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GetForegroundWindow, GetMessageW, GetWindowThreadProcessId, PostThreadMessageW,
@@ -31,6 +31,7 @@ struct HookContext {
     tx: Sender<PlatformEvent>,
     active_lone_modifier: u32,
     modifier_tainted: bool,
+    intercept_prtsc: Arc<AtomicBool>,
 }
 
 thread_local! {
@@ -92,12 +93,18 @@ unsafe extern "system" fn keyboard_hook_proc(
         let msg = wparam.0 as u32;
         let vk = kb.vkCode;
         let is_alt_key = vk == u32::from(VK_LMENU.0) || vk == u32::from(VK_RMENU.0);
+        let is_prtsc = vk == u32::from(VK_SNAPSHOT.0);
+        let mut swallow_key = false;
 
         HOOK_CTX.with(|cell| {
             let mut borrow = cell.borrow_mut();
             let Some(ctx) = borrow.as_mut() else {
                 return;
             };
+
+            if is_prtsc && ctx.intercept_prtsc.load(Ordering::Relaxed) {
+                swallow_key = true;
+            }
 
             match msg {
                 WM_KEYDOWN | WM_SYSKEYDOWN => {
@@ -111,7 +118,11 @@ unsafe extern "system" fn keyboard_hook_proc(
                     }
 
                     let layout = query_foreground_layout();
-                    let ch = decode_unicode_char(vk, kb.scanCode);
+                    let ch = if is_prtsc {
+                        None
+                    } else {
+                        decode_unicode_char(vk, kb.scanCode)
+                    };
                     let evt = PlatformEvent::KeyDown {
                         vk_code: vk,
                         scan_code: kb.scanCode,
@@ -146,6 +157,10 @@ unsafe extern "system" fn keyboard_hook_proc(
                 _ => {}
             }
         });
+
+        if swallow_key {
+            return LRESULT(1);
+        }
     }
 
     CallNextHookEx(HHOOK::default(), code, wparam, lparam)
@@ -174,7 +189,7 @@ pub struct HookThreadHandle {
 }
 
 impl HookThreadHandle {
-    pub fn start(tx: Sender<PlatformEvent>) -> Self {
+    pub fn start(tx: Sender<PlatformEvent>, intercept_prtsc: Arc<AtomicBool>) -> Self {
         let thread_id = Arc::new(AtomicU32::new(0));
         let running = Arc::new(AtomicBool::new(true));
 
@@ -192,6 +207,7 @@ impl HookThreadHandle {
                         tx,
                         active_lone_modifier: 0,
                         modifier_tainted: false,
+                        intercept_prtsc,
                     });
                 });
 

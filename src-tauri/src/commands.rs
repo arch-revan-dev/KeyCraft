@@ -72,6 +72,9 @@ pub fn save_config(
 
     store::save_config(&config)?;
     let _ = state.platform.set_autostart(autostart);
+    state
+        .platform
+        .set_intercept_print_screen(crate::should_intercept_print_screen(&config));
 
     {
         let mut eng = state.engine.lock().map_err(|_| "engine lock poisoned")?;

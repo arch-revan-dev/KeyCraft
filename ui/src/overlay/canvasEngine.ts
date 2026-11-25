@@ -56,22 +56,25 @@ export function drawAnnotation(
   ctx: CanvasRenderingContext2D,
   item: AnnotationItem,
   offsetX = 0,
-  offsetY = 0
+  offsetY = 0,
+  scaleX = 1,
+  scaleY = 1
 ): void {
   const x1 = item.x1 - offsetX;
   const y1 = item.y1 - offsetY;
   const x2 = item.x2 - offsetX;
   const y2 = item.y2 - offsetY;
 
+  // Pixelate & Gaussian Blur operate on raw physical ImageData pixels (ignoring canvas transform)
   if (item.tool === 'pixelate') {
-    const r = normalizeRect(x1, y1, x2, y2);
-    applyPixelate(ctx, r.x, r.y, r.w, r.h, Math.max(8, item.strokeWidth * 3));
+    const r = normalizeRect(x1 * scaleX, y1 * scaleY, x2 * scaleX, y2 * scaleY);
+    applyPixelate(ctx, r.x, r.y, r.w, r.h, Math.max(8, item.strokeWidth * 3 * scaleX));
     return;
   }
 
   if (item.tool === 'blur') {
-    const r = normalizeRect(x1, y1, x2, y2);
-    applyGaussianBlur(ctx, r.x, r.y, r.w, r.h, Math.max(8, item.strokeWidth * 4));
+    const r = normalizeRect(x1 * scaleX, y1 * scaleY, x2 * scaleX, y2 * scaleY);
+    applyGaussianBlur(ctx, r.x, r.y, r.w, r.h, Math.max(8, item.strokeWidth * 4 * scaleX));
     return;
   }
 
@@ -178,28 +181,30 @@ export function drawAnnotation(
 export function exportSelectionToPng(
   bgImage: HTMLImageElement | HTMLCanvasElement,
   selection: SelectionBox,
-  annotations: AnnotationItem[]
+  annotations: AnnotationItem[],
+  scaleX = 1,
+  scaleY = 1
 ): string {
+  const sx = Math.max(0, Math.round(selection.x * scaleX));
+  const sy = Math.max(0, Math.round(selection.y * scaleY));
+  const sw = Math.max(1, Math.round(selection.w * scaleX));
+  const sh = Math.max(1, Math.round(selection.h * scaleY));
+
   const out = document.createElement('canvas');
-  out.width = Math.max(1, Math.round(selection.w));
-  out.height = Math.max(1, Math.round(selection.h));
+  out.width = sw;
+  out.height = sh;
   const ctx = out.getContext('2d')!;
+  ctx.imageSmoothingEnabled = false;
 
-  ctx.drawImage(
-    bgImage,
-    selection.x,
-    selection.y,
-    selection.w,
-    selection.h,
-    0,
-    0,
-    out.width,
-    out.height
-  );
+  // Copy exact 1:1 native physical desktop pixels (lossless, zero blur/pixelation)
+  ctx.drawImage(bgImage, sx, sy, sw, sh, 0, 0, sw, sh);
 
+  ctx.save();
+  ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
   for (const item of annotations) {
-    drawAnnotation(ctx, item, selection.x, selection.y);
+    drawAnnotation(ctx, item, selection.x, selection.y, scaleX, scaleY);
   }
+  ctx.restore();
 
   return out.toDataURL('image/png');
 }

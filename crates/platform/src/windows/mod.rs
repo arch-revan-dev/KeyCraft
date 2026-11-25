@@ -9,6 +9,7 @@ pub mod hook;
 pub mod injector;
 pub mod pin_window;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use crossbeam_channel::{bounded, Receiver};
@@ -23,6 +24,7 @@ use crate::{
 pub struct WindowsBackend {
     focus_cache: Arc<RwLock<FocusContext>>,
     hook_handle: Mutex<Option<hook::HookThreadHandle>>,
+    intercept_prtsc: Arc<AtomicBool>,
 }
 
 impl WindowsBackend {
@@ -34,6 +36,7 @@ impl WindowsBackend {
         Ok(Self {
             focus_cache: Arc::new(RwLock::new(FocusContext::default())),
             hook_handle: Mutex::new(None),
+            intercept_prtsc: Arc::new(AtomicBool::new(true)),
         })
     }
 }
@@ -42,7 +45,7 @@ impl PlatformBackend for WindowsBackend {
     fn start_hooks(&self) -> PlatformResult<Receiver<PlatformEvent>> {
         let (tx, rx) = bounded::<PlatformEvent>(256);
         let _focus_thread = focus::spawn_focus_monitor(Arc::clone(&self.focus_cache), tx.clone());
-        let handle = hook::HookThreadHandle::start(tx);
+        let handle = hook::HookThreadHandle::start(tx, Arc::clone(&self.intercept_prtsc));
         if let Ok(mut guard) = self.hook_handle.lock() {
             *guard = Some(handle);
         }
@@ -119,5 +122,9 @@ impl PlatformBackend for WindowsBackend {
 
     fn is_autostart_enabled(&self) -> bool {
         autostart::is_autostart_enabled()
+    }
+
+    fn set_intercept_print_screen(&self, intercept: bool) {
+        self.intercept_prtsc.store(intercept, Ordering::Relaxed);
     }
 }
