@@ -208,8 +208,9 @@ pub fn sandbox_reset(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn trigger_screenshot(app: AppHandle, mode: String) -> Result<(), String> {
-    windows_mgr::open_screenshot_overlay(&app, &mode)
+pub async fn trigger_screenshot(app: AppHandle, mode: String) -> Result<(), String> {
+    windows_mgr::open_screenshot_overlay_async(app, mode);
+    Ok(())
 }
 
 #[tauri::command]

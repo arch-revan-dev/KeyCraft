@@ -125,6 +125,7 @@ pub fn window_title_for_hwnd(hwnd: HWND) -> String {
 }
 
 /// Inspect focused UI element via UIAutomation to detect PasswordBox / Secure Input fields.
+/// Uses strictly fast boolean properties (no slow cross-process name/tree walks).
 fn check_uia_is_password(uia: &IUIAutomation) -> bool {
     unsafe {
         let Ok(elem) = uia.GetFocusedElement() else {
@@ -140,14 +141,6 @@ fn check_uia_is_password(uia: &IUIAutomation) -> bool {
                 if b {
                     return true;
                 }
-            }
-        }
-        // Fallback heuristic for custom-drawn / Electron / Chromium password controls
-        if let Ok(name) = elem.CurrentName() {
-            let lower = name.to_string().to_lowercase();
-            if lower.contains("password") || lower.contains("пароль") || lower.contains("passphrase")
-            {
-                return true;
             }
         }
         false
@@ -230,13 +223,19 @@ pub fn spawn_focus_monitor(
 
             let mut prev = refresh_focus_context(uia.as_ref(), &cache_worker);
             let _ = event_tx_worker.try_send(PlatformEvent::FocusChanged(prev.clone()));
+            let mut last_uia_check = std::time::Instant::now();
 
-            // Also poll layout gently every 250ms while waiting for WinEvent pings (zero CPU in idle).
+            // Poll layout gently every 250ms while waiting for WinEvent pings; debounce UIA to avoid RPC storms.
             loop {
                 match ping_rx.recv_timeout(std::time::Duration::from_millis(250)) {
                     Ok(()) => {
-                        // Drain coalesced pings
+                        // Coalesce burst focus notifications from browsers/lists
+                        std::thread::sleep(std::time::Duration::from_millis(20));
                         while ping_rx.try_recv().is_ok() {}
+                        if last_uia_check.elapsed() < std::time::Duration::from_millis(120) {
+                            continue;
+                        }
+                        last_uia_check = std::time::Instant::now();
                         let next = refresh_focus_context(uia.as_ref(), &cache_worker);
                         if next.process_name != prev.process_name
                             || next.is_password_field != prev.is_password_field

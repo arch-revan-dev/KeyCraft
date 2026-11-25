@@ -20,7 +20,7 @@
 
 Установка не требуется — утилита работает из одного автономного файла:
 
-1. Скачайте **`KeyCraft-v0.1.0-windows-x64.exe`** (или архив `KeyCraft-v0.1.0-windows-x64-portable.zip`) со страницы [Releases](https://github.com/arch-revan-dev/KeyCraft/releases/latest).
+1. Скачайте **`KeyCraft-v0.1.1-windows-x64.exe`** (или архив `KeyCraft-v0.1.1-windows-x64-portable.zip`) со страницы [Releases](https://github.com/arch-revan-dev/KeyCraft/releases/latest).
 2. Запустите `KeyCraft.exe` — приложение свернётся в системный трей и покажет текущую раскладку (`RU` / `EN`).
 3. Нажмите левой кнопкой по иконке в трее, чтобы открыть **Настройки** (или правой — для быстрого меню паузы и скриншотов).
 4. При закрытии окна настроек WebView2 полностью выгружается из памяти; в фоне остаётся только чистый Rust-процесс (`~4.3 МБ` Private RAM).

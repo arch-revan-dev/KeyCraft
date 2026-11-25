@@ -238,7 +238,7 @@ pub fn start_daemon(app: AppHandle) {
                                 })
                                 .unwrap_or((true, true, 700));
 
-                            tray::refresh_tray_visuals(&app, layout, enabled);
+                            tray::refresh_tray_icon(&app, layout, enabled);
                             if enabled && show_badge {
                                 state.platform.show_caret_badge(layout, duration_ms);
                             }
@@ -291,11 +291,10 @@ pub fn start_daemon(app: AppHandle) {
                         if let Some(mode) =
                             check_screenshot_hotkeys(&hotkeys, vk_code, ctrl, alt, shift, win)
                         {
-                            let app_clone = app.clone();
-                            let mode_str = mode.to_string();
-                            let _ = app.run_on_main_thread(move || {
-                                let _ = windows_mgr::open_screenshot_overlay(&app_clone, &mode_str);
-                            });
+                            windows_mgr::open_screenshot_overlay_async(
+                                app.clone(),
+                                mode.to_string(),
+                            );
                             continue;
                         }
 

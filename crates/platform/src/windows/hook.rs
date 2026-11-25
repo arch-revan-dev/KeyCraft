@@ -133,12 +133,15 @@ unsafe extern "system" fn keyboard_hook_proc(
                     } else {
                         false
                     };
-                    let layout = query_foreground_layout();
-                    let _ = ctx.tx.try_send(PlatformEvent::KeyUp {
-                        vk_code: vk,
-                        was_lone_tap,
-                        layout,
-                    });
+                    // Only emit KeyUp into the daemon channel for lone modifier taps (zero noise on regular typing).
+                    if was_lone_tap {
+                        let layout = query_foreground_layout();
+                        let _ = ctx.tx.try_send(PlatformEvent::KeyUp {
+                            vk_code: vk,
+                            was_lone_tap: true,
+                            layout,
+                        });
+                    }
                 }
                 _ => {}
             }

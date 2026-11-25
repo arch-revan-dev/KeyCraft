@@ -273,14 +273,17 @@ pub fn capture_virtual_screen() -> PlatformResult<CapturedFrame> {
     };
     let visible_windows = enumerate_visible_window_rects();
 
-    // Try DXGI Desktop Duplication first when single-monitor matches virtual bounds, else GDI BitBlt
-    let rgba = if origin_x == 0 && origin_y == 0 {
-        match try_capture_dxgi_primary(width, height) {
-            Some(buf) => buf,
-            None => capture_gdi_virtual(origin_x, origin_y, width, height)?,
+    // Use fast, stall-free DPI-aware GDI BitBlt across the full virtual screen (avoids hybrid-GPU DXGI DWM hangs),
+    // falling back to DXGI Desktop Duplication only if GDI BitBlt fails.
+    let rgba = match capture_gdi_virtual(origin_x, origin_y, width, height) {
+        Ok(buf) => buf,
+        Err(gdi_err) => {
+            if origin_x == 0 && origin_y == 0 {
+                try_capture_dxgi_primary(width, height).ok_or(gdi_err)?
+            } else {
+                return Err(gdi_err);
+            }
         }
-    } else {
-        capture_gdi_virtual(origin_x, origin_y, width, height)?
     };
 
     let png_bytes = encode_rgba_to_png(width, height, &rgba)?;

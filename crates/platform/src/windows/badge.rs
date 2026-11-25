@@ -18,9 +18,10 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassW, ShowWindow,
-    UpdateLayeredWindow, SW_SHOWNOACTIVATE, ULW_ALPHA, WNDCLASSW, WS_EX_LAYERED,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, PeekMessageW,
+    RegisterClassW, ShowWindow, TranslateMessage, UpdateLayeredWindow, MSG, PM_REMOVE,
+    SW_SHOWNOACTIVATE, ULW_ALPHA, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 
 use crate::windows::focus::query_caret_or_cursor_pos;
@@ -230,11 +231,21 @@ pub fn show_caret_badge(layout: Language, duration_ms: u32) {
                 );
                 let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
 
+                // Pump Win32 messages during hold & fade so DWM never sees an unresponsive HWND.
+                let pump_messages = || {
+                    let mut msg = MSG::default();
+                    while PeekMessageW(&mut msg, hwnd, 0, 0, PM_REMOVE).as_bool() {
+                        let _ = TranslateMessage(&msg);
+                        DispatchMessageW(&msg);
+                    }
+                };
+
                 let hold_ms = duration_ms.saturating_sub(150).max(200);
                 let mut waited = 0u32;
                 while waited < hold_ms && BADGE_GENERATION.load(Ordering::Relaxed) == gen {
-                    std::thread::sleep(std::time::Duration::from_millis(25));
-                    waited += 25;
+                    pump_messages();
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    waited += 20;
                 }
 
                 // Smooth 150ms fade-out
@@ -242,6 +253,7 @@ pub fn show_caret_badge(layout: Language, duration_ms: u32) {
                     if BADGE_GENERATION.load(Ordering::Relaxed) != gen {
                         break;
                     }
+                    pump_messages();
                     blend.SourceConstantAlpha = ((step * 255) / 10) as u8;
                     let _ = UpdateLayeredWindow(
                         hwnd,
@@ -256,6 +268,7 @@ pub fn show_caret_badge(layout: Language, duration_ms: u32) {
                     );
                     std::thread::sleep(std::time::Duration::from_millis(15));
                 }
+                pump_messages();
 
                 SelectObject(hdc_mem, old);
                 let _ = DeleteObject(hbm);

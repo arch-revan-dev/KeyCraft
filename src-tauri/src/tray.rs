@@ -167,13 +167,13 @@ pub fn setup_tray(app: &AppHandle, layout: Language, enabled: bool) -> tauri::Re
                 crate::toggle_enabled_from_backend(app);
             }
             MENU_SHOT_REGION => {
-                let _ = windows_mgr::open_screenshot_overlay(app, "region");
+                windows_mgr::open_screenshot_overlay_async(app.clone(), "region".to_string());
             }
             MENU_SHOT_WINDOW => {
-                let _ = windows_mgr::open_screenshot_overlay(app, "window");
+                windows_mgr::open_screenshot_overlay_async(app.clone(), "window".to_string());
             }
             MENU_SHOT_FULL => {
-                let _ = windows_mgr::open_screenshot_overlay(app, "fullscreen");
+                windows_mgr::open_screenshot_overlay_async(app.clone(), "fullscreen".to_string());
             }
             MENU_SETTINGS => {
                 let _ = windows_mgr::open_settings_window(app);
@@ -196,16 +196,35 @@ pub fn setup_tray(app: &AppHandle, layout: Language, enabled: bool) -> tauri::Re
         .build(app)
 }
 
-pub fn refresh_tray_visuals(app: &AppHandle, layout: Language, enabled: bool) {
-    if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let _ = tray.set_icon(Some(render_tray_icon(layout, enabled)));
-        let _ = tray.set_tooltip(Some(format!(
-            "KeyCraft — {} ({})",
-            layout.label(),
-            if enabled { "активен" } else { "пауза" }
-        )));
-        if let Ok(menu) = build_tray_menu(app, enabled) {
-            let _ = tray.set_menu(Some(menu));
+/// Update tray icon & tooltip safely on the main UI thread (without rebuilding HMENU).
+pub fn refresh_tray_icon(app: &AppHandle, layout: Language, enabled: bool) {
+    let app_ui = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(tray) = app_ui.tray_by_id(TRAY_ID) {
+            let _ = tray.set_icon(Some(render_tray_icon(layout, enabled)));
+            let _ = tray.set_tooltip(Some(format!(
+                "KeyCraft — {} ({})",
+                layout.label(),
+                if enabled { "активен" } else { "пауза" }
+            )));
         }
-    }
+    });
+}
+
+/// Update tray icon, tooltip, AND menu (only when Pause/Resume state changes) on the main UI thread.
+pub fn refresh_tray_visuals(app: &AppHandle, layout: Language, enabled: bool) {
+    let app_ui = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(tray) = app_ui.tray_by_id(TRAY_ID) {
+            let _ = tray.set_icon(Some(render_tray_icon(layout, enabled)));
+            let _ = tray.set_tooltip(Some(format!(
+                "KeyCraft — {} ({})",
+                layout.label(),
+                if enabled { "активен" } else { "пауза" }
+            )));
+            if let Ok(menu) = build_tray_menu(&app_ui, enabled) {
+                let _ = tray.set_menu(Some(menu));
+            }
+        }
+    });
 }

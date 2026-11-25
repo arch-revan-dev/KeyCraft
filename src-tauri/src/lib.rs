@@ -3,6 +3,7 @@
 
 mod commands;
 mod daemon;
+mod logger;
 mod store;
 mod tray;
 mod windows_mgr;
@@ -43,6 +44,9 @@ pub fn toggle_enabled_from_backend(app: &AppHandle) {
 }
 
 pub fn run() {
+    logger::install_panic_hook();
+    logger::log_line("INFO", concat!("KeyCraft v", env!("CARGO_PKG_VERSION"), " starting"));
+
     let mut initial_cfg = store::load_config();
     let platform_box = create_platform_backend().expect("initialize platform backend");
     initial_cfg.system.autostart = platform_box.is_autostart_enabled();

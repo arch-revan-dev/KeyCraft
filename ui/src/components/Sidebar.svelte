@@ -60,7 +60,7 @@
   </nav>
 
   <div class="sidebar-footer">
-    <span class="footer-meta">v0.1.0 · Офлайн</span>
+    <span class="footer-meta">v0.1.1 · Офлайн</span>
   </div>
 </aside>
 
