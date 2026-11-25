@@ -486,6 +486,40 @@ fn t72_typo_ru_vowel_confusions() {
 }
 
 #[test]
+fn t73_two_letter_ru_abbrevs_never_switch() {
+    let mut eng = KeyCraftEngine::new(KeyCraftConfig::default());
+    for abbr in ["пк", "тк", "вк", "тг", "лс", "хз", "др", "тд"] {
+        assert_eq!(
+            type_word_and_space(&mut eng, abbr, Language::Ru),
+            EngineAction::NoOp,
+            "RU abbreviation `{abbr}` should not auto-switch"
+        );
+    }
+}
+
+#[test]
+fn t74_sticky_shift_chtoby_privet_hello() {
+    let mut eng = KeyCraftEngine::new(KeyCraftConfig::default());
+    assert_replaced(type_word_and_space(&mut eng, "ЧТОбы", Language::Ru), "Чтобы ");
+    assert_replaced(type_word_and_space(&mut eng, "ПРивет", Language::Ru), "Привет ");
+    assert_replaced(type_word_and_space(&mut eng, "HEllo", Language::En), "Hello ");
+}
+
+#[test]
+fn t75_sticky_shift_ignores_acronyms_and_pascal_code() {
+    let mut eng = KeyCraftEngine::new(KeyCraftConfig::default());
+    assert_eq!(type_word_and_space(&mut eng, "США", Language::Ru), EngineAction::NoOp);
+    assert_eq!(type_word_and_space(&mut eng, "IPAddress", Language::En), EngineAction::NoOp);
+    assert_eq!(type_word_and_space(&mut eng, "HttpClient", Language::En), EngineAction::NoOp);
+}
+
+#[test]
+fn t76_screenshot_enabled_serde_default() {
+    let cfg = KeyCraftConfig::default();
+    assert!(cfg.screenshot.enabled);
+}
+
+#[test]
 fn t51_typo_can_be_disabled() {
     let mut cfg = KeyCraftConfig::default();
     cfg.typos.enabled = false;

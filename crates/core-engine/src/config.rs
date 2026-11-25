@@ -203,8 +203,14 @@ impl Default for HotkeyConfig {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScreenshotConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     pub save_dir: String,
     pub filename_pattern: String,
     pub show_magnifier: bool,
@@ -216,6 +222,7 @@ pub struct ScreenshotConfig {
 impl Default for ScreenshotConfig {
     fn default() -> Self {
         Self {
+            enabled: true,
             save_dir: String::new(),
             filename_pattern: "KeyCraft_%Y-%m-%d_%H-%M-%S".to_string(),
             show_magnifier: true,

@@ -47,8 +47,8 @@
     </SettingRow>
 
     <SettingRow
-      title="Исправлять случайный CapsLock"
-      description="Преобразует слова с инвертированным регистром: пРИВЕТ → Привет, hELLO → Hello"
+      title="Исправлять случайный CapsLock и две заглавные"
+      description="Чинит инвертированный регистр и залипший Shift: пРИВЕТ → Привет, ЧТОбы → Чтобы"
     >
       <Toggle
         checked={config.layout.fix_capslock}

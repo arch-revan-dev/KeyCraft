@@ -82,7 +82,7 @@ pub fn save_config(
     }
 
     let layout = state.platform.current_layout();
-    tray::refresh_tray_visuals(&app, layout, enabled);
+    tray::refresh_tray_visuals(&app, layout, enabled, config.screenshot.enabled);
     Ok(config)
 }
 
@@ -121,7 +121,7 @@ pub fn toggle_enabled(app: AppHandle, state: State<'_, AppState>) -> Result<bool
     };
     let _ = store::save_config(&cfg);
     let layout = state.platform.current_layout();
-    tray::refresh_tray_visuals(&app, layout, new_enabled);
+    tray::refresh_tray_visuals(&app, layout, new_enabled, cfg.screenshot.enabled);
     Ok(new_enabled)
 }
 
@@ -208,9 +208,34 @@ pub fn sandbox_reset(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn trigger_screenshot(app: AppHandle, mode: String) -> Result<(), String> {
+pub async fn trigger_screenshot(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    mode: String,
+) -> Result<(), String> {
+    let enabled = state
+        .engine
+        .lock()
+        .map(|e| e.config().screenshot.enabled)
+        .unwrap_or(true);
+    if !enabled {
+        return Ok(());
+    }
     windows_mgr::open_screenshot_overlay_async(app, mode);
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_capture_image_data_url(state: State<'_, AppState>) -> Result<String, String> {
+    let pending = state
+        .pending_capture
+        .lock()
+        .map_err(|_| "capture lock poisoned")?;
+    let Some(cap) = pending.as_ref() else {
+        return Err("no active capture frame".to_string());
+    };
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&cap.frame.png_bytes);
+    Ok(format!("data:image/png;base64,{encoded}"))
 }
 
 #[tauri::command]

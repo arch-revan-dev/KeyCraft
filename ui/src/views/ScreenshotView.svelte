@@ -26,16 +26,30 @@
 </script>
 
 <div class="view-stack">
+  <SettingGroup title="Модуль скриншотера">
+    <SettingRow
+      title="Включить встроенный скриншотер"
+      description="Отключите, чтобы KeyCraft не перехватывал PrintScreen и не конфликтовал с Ножницами Windows"
+    >
+      <Toggle
+        checked={config.screenshot.enabled}
+        ariaLabel="Включить встроенный скриншотер"
+        onchange={(v) => patch((c) => (c.screenshot.enabled = v))}
+      />
+    </SettingRow>
+  </SettingGroup>
+
+  <div class="shot-body" class:disabled={!config.screenshot.enabled}>
   <div class="quick-capture">
-    <button type="button" class="btn btn-primary" onclick={() => triggerScreenshot('region')}>
+    <button type="button" class="btn btn-primary" disabled={!config.screenshot.enabled} onclick={() => triggerScreenshot('region')}>
       <Camera size={14} strokeWidth={1.5} />
       Снять область
     </button>
-    <button type="button" class="btn" onclick={() => triggerScreenshot('window')}>
+    <button type="button" class="btn" disabled={!config.screenshot.enabled} onclick={() => triggerScreenshot('window')}>
       <AppWindow size={14} strokeWidth={1.5} />
       Активное окно
     </button>
-    <button type="button" class="btn" onclick={() => triggerScreenshot('fullscreen')}>
+    <button type="button" class="btn" disabled={!config.screenshot.enabled} onclick={() => triggerScreenshot('fullscreen')}>
       <Maximize size={14} strokeWidth={1.5} />
       Весь экран
     </button>
@@ -138,6 +152,7 @@
       />
     </SettingRow>
   </SettingGroup>
+  </div>
 </div>
 
 <style>
@@ -145,6 +160,18 @@
     display: flex;
     flex-direction: column;
     gap: 18px;
+  }
+
+  .shot-body {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+
+  .shot-body.disabled {
+    opacity: 0.45;
+    pointer-events: none;
   }
 
   .quick-capture {

@@ -63,6 +63,7 @@ export function createDefaultConfig(): KeyCraftConfig {
       screenshot_fullscreen: 'Ctrl+PrintScreen',
     },
     screenshot: {
+      enabled: true,
       save_dir: '',
       filename_pattern: 'KeyCraft_%Y-%m-%d_%H-%M-%S',
       show_magnifier: true,
@@ -182,6 +183,11 @@ export async function getCaptureMetadata(): Promise<CaptureMetadata> {
     };
   }
   return invoke<CaptureMetadata>('get_capture_metadata');
+}
+
+export async function getCaptureImageDataUrl(): Promise<string> {
+  if (!isTauriRuntime()) return '';
+  return invoke<string>('get_capture_image_data_url');
 }
 
 export async function screenshotCopyPng(pngBase64: string): Promise<void> {

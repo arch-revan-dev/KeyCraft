@@ -281,21 +281,29 @@ pub fn start_daemon(app: AppHandle) {
                         layout,
                         ..
                     } => {
-                        let (enabled, hotkeys) = state
+                        let (enabled, screenshot_enabled, hotkeys) = state
                             .engine
                             .lock()
-                            .map(|e| (e.config().enabled, e.config().hotkeys.clone()))
-                            .unwrap_or((true, HotkeyConfig::default()));
+                            .map(|e| {
+                                (
+                                    e.config().enabled,
+                                    e.config().screenshot.enabled,
+                                    e.config().hotkeys.clone(),
+                                )
+                            })
+                            .unwrap_or((true, true, HotkeyConfig::default()));
 
-                        // Screenshot hotkeys work even if text switching is paused
-                        if let Some(mode) =
-                            check_screenshot_hotkeys(&hotkeys, vk_code, ctrl, alt, shift, win)
-                        {
-                            windows_mgr::open_screenshot_overlay_async(
-                                app.clone(),
-                                mode.to_string(),
-                            );
-                            continue;
+                        // Screenshot hotkeys work ONLY when the built-in screenshotter is enabled
+                        if screenshot_enabled {
+                            if let Some(mode) =
+                                check_screenshot_hotkeys(&hotkeys, vk_code, ctrl, alt, shift, win)
+                            {
+                                windows_mgr::open_screenshot_overlay_async(
+                                    app.clone(),
+                                    mode.to_string(),
+                                );
+                                continue;
+                            }
                         }
 
                         if !enabled {

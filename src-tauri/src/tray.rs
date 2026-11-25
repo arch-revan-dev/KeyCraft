@@ -119,7 +119,11 @@ pub fn render_tray_icon(layout: Language, enabled: bool) -> Image<'static> {
     Image::new_owned(pixmap.take(), SIZE, SIZE)
 }
 
-pub fn build_tray_menu(app: &AppHandle, enabled: bool) -> tauri::Result<Menu<tauri::Wry>> {
+pub fn build_tray_menu(
+    app: &AppHandle,
+    enabled: bool,
+    screenshot_enabled: bool,
+) -> tauri::Result<Menu<tauri::Wry>> {
     let pause_label = if enabled {
         "Приостановить"
     } else {
@@ -127,30 +131,42 @@ pub fn build_tray_menu(app: &AppHandle, enabled: bool) -> tauri::Result<Menu<tau
     };
     let toggle_pause = MenuItem::with_id(app, MENU_TOGGLE_PAUSE, pause_label, true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
-    let shot_region = MenuItem::with_id(app, MENU_SHOT_REGION, "Скриншот области", true, None::<&str>)?;
-    let shot_window = MenuItem::with_id(app, MENU_SHOT_WINDOW, "Скриншот окна", true, None::<&str>)?;
-    let shot_full = MenuItem::with_id(app, MENU_SHOT_FULL, "Скриншот экрана", true, None::<&str>)?;
-    let sep2 = PredefinedMenuItem::separator(app)?;
     let open_settings = MenuItem::with_id(app, MENU_SETTINGS, "Настройки…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, MENU_QUIT, "Выход", true, None::<&str>)?;
 
-    Menu::with_items(
-        app,
-        &[
-            &toggle_pause,
-            &sep1,
-            &shot_region,
-            &shot_window,
-            &shot_full,
-            &sep2,
-            &open_settings,
-            &quit,
-        ],
-    )
+    if screenshot_enabled {
+        let shot_region =
+            MenuItem::with_id(app, MENU_SHOT_REGION, "Скриншот области", true, None::<&str>)?;
+        let shot_window =
+            MenuItem::with_id(app, MENU_SHOT_WINDOW, "Скриншот окна", true, None::<&str>)?;
+        let shot_full =
+            MenuItem::with_id(app, MENU_SHOT_FULL, "Скриншот экрана", true, None::<&str>)?;
+        let sep2 = PredefinedMenuItem::separator(app)?;
+        Menu::with_items(
+            app,
+            &[
+                &toggle_pause,
+                &sep1,
+                &shot_region,
+                &shot_window,
+                &shot_full,
+                &sep2,
+                &open_settings,
+                &quit,
+            ],
+        )
+    } else {
+        Menu::with_items(app, &[&toggle_pause, &sep1, &open_settings, &quit])
+    }
 }
 
-pub fn setup_tray(app: &AppHandle, layout: Language, enabled: bool) -> tauri::Result<TrayIcon> {
-    let menu = build_tray_menu(app, enabled)?;
+pub fn setup_tray(
+    app: &AppHandle,
+    layout: Language,
+    enabled: bool,
+    screenshot_enabled: bool,
+) -> tauri::Result<TrayIcon> {
+    let menu = build_tray_menu(app, enabled, screenshot_enabled)?;
     let icon = render_tray_icon(layout, enabled);
 
     TrayIconBuilder::with_id(TRAY_ID)
@@ -211,8 +227,13 @@ pub fn refresh_tray_icon(app: &AppHandle, layout: Language, enabled: bool) {
     });
 }
 
-/// Update tray icon, tooltip, AND menu (only when Pause/Resume state changes) on the main UI thread.
-pub fn refresh_tray_visuals(app: &AppHandle, layout: Language, enabled: bool) {
+/// Update tray icon, tooltip, AND menu (when Pause/Resume or screenshot toggle changes) on the main UI thread.
+pub fn refresh_tray_visuals(
+    app: &AppHandle,
+    layout: Language,
+    enabled: bool,
+    screenshot_enabled: bool,
+) {
     let app_ui = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(tray) = app_ui.tray_by_id(TRAY_ID) {
@@ -222,7 +243,7 @@ pub fn refresh_tray_visuals(app: &AppHandle, layout: Language, enabled: bool) {
                 layout.label(),
                 if enabled { "активен" } else { "пауза" }
             )));
-            if let Ok(menu) = build_tray_menu(&app_ui, enabled) {
+            if let Ok(menu) = build_tray_menu(&app_ui, enabled, screenshot_enabled) {
                 let _ = tray.set_menu(Some(menu));
             }
         }

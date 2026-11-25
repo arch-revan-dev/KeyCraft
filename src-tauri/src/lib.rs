@@ -40,7 +40,7 @@ pub fn toggle_enabled_from_backend(app: &AppHandle) {
     };
     let _ = store::save_config(&cfg);
     let layout = state.platform.current_layout();
-    tray::refresh_tray_visuals(app, layout, new_enabled);
+    tray::refresh_tray_visuals(app, layout, new_enabled, cfg.screenshot.enabled);
 }
 
 pub fn run() {
@@ -54,6 +54,7 @@ pub fn run() {
     let platform: Arc<dyn PlatformBackend> = Arc::from(platform_box);
     let initial_layout = platform.current_layout();
     let initial_enabled = initial_cfg.enabled;
+    let initial_screenshot_enabled = initial_cfg.screenshot.enabled;
 
     let engine = Arc::new(Mutex::new(KeyCraftEngine::new(initial_cfg.clone())));
     let sandbox_engine = Arc::new(Mutex::new(KeyCraftEngine::new(initial_cfg)));
@@ -79,6 +80,7 @@ pub fn run() {
             tauri::http::Response::builder()
                 .status(if bytes.is_empty() { 404 } else { 200 })
                 .header("Content-Type", "image/png")
+                .header("Access-Control-Allow-Origin", "*")
                 .header("Cache-Control", "no-store")
                 .body(bytes)
                 .unwrap_or_else(|_| tauri::http::Response::new(Vec::new()))
@@ -97,13 +99,19 @@ pub fn run() {
             commands::sandbox_reset,
             commands::trigger_screenshot,
             commands::get_capture_metadata,
+            commands::get_capture_image_data_url,
             commands::screenshot_copy_png,
             commands::screenshot_save_png,
             commands::screenshot_pin_png,
             commands::screenshot_close,
         ])
         .setup(move |app| {
-            tray::setup_tray(app.handle(), initial_layout, initial_enabled)?;
+            tray::setup_tray(
+                app.handle(),
+                initial_layout,
+                initial_enabled,
+                initial_screenshot_enabled,
+            )?;
             daemon::start_daemon(app.handle().clone());
             Ok(())
         })

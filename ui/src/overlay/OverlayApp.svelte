@@ -18,6 +18,7 @@
     X,
   } from 'lucide-svelte';
   import {
+    getCaptureImageDataUrl,
     getCaptureMetadata,
     isTauriRuntime,
     screenshotClose,
@@ -112,14 +113,14 @@
       }
 
       if (isTauriRuntime()) {
+        const dataUrl = await getCaptureImageDataUrl();
         const img = new Image();
-        img.crossOrigin = 'anonymous';
         img.onload = () => {
           bgSource = img;
           initSelectionForMode(m, w, h);
           redraw();
         };
-        img.src = `http://keycraft-capture.localhost/frame?t=${Date.now()}`;
+        img.src = dataUrl || `http://keycraft-capture.localhost/frame?t=${Date.now()}`;
       } else {
         bgSource = createDevPreviewBackdrop(w, h);
         // In dev preview, pre-select a clean region so toolbar is immediately inspectable

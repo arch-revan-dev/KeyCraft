@@ -60,6 +60,7 @@ export interface HotkeyConfig {
 }
 
 export interface ScreenshotConfig {
+  enabled: boolean;
   save_dir: string;
   filename_pattern: string;
   show_magnifier: boolean;

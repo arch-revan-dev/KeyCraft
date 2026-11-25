@@ -28,6 +28,7 @@ enum CasePattern {
     Capitalized,
     AllUpper,
     AccidentalCapsLock,
+    StickyLeadingShift,
     Mixed,
 }
 
@@ -48,6 +49,15 @@ fn detect_case_pattern(word: &str) -> CasePattern {
     if letters.len() >= 3 && letters[0].is_lowercase() && letters[1..].iter().all(|c| c.is_uppercase()) {
         return CasePattern::AccidentalCapsLock;
     }
+    // Sticky Shift at word start: 2..=3 leading uppercase letters followed by 1+ ALL-lowercase letters
+    // (e.g. `ЧТОбы`, `ПРивет`, `ЧТо`, `HEllo`). Never matches `HttpClient` because rest must be all-lower.
+    let leading_upper = letters.iter().take_while(|c| c.is_uppercase()).count();
+    if (2..=3).contains(&leading_upper)
+        && letters.len() > leading_upper
+        && letters[leading_upper..].iter().all(|c| c.is_lowercase())
+    {
+        return CasePattern::StickyLeadingShift;
+    }
     CasePattern::Mixed
 }
 
@@ -57,8 +67,12 @@ pub fn apply_case_from(source: &str, converted: &str, fix_capslock: bool) -> (St
         CasePattern::Lower => (converted.to_lowercase(), false),
         CasePattern::AllUpper => (converted.to_uppercase(), false),
         CasePattern::Capitalized => (capitalize_first(converted), false),
-        CasePattern::AccidentalCapsLock if fix_capslock => (capitalize_first(converted), true),
-        CasePattern::AccidentalCapsLock | CasePattern::Mixed => (converted.to_string(), false),
+        CasePattern::AccidentalCapsLock | CasePattern::StickyLeadingShift if fix_capslock => {
+            (capitalize_first(converted), true)
+        }
+        CasePattern::AccidentalCapsLock | CasePattern::StickyLeadingShift | CasePattern::Mixed => {
+            (converted.to_string(), false)
+        }
     }
 }
 
@@ -112,14 +126,24 @@ pub fn evaluate_layout_switch(
         return None;
     }
 
-    // 1. Check accidental CapsLock on an ALREADY valid word (e.g. `пРИВЕТ` -> `Привет`, `hELLO` -> `Hello`).
+    // 1. Check accidental CapsLock (`пРИВЕТ` -> `Привет`, `hELLO` -> `Hello`) or sticky Shift
+    //    (`ЧТОбы` -> `Чтобы`, `ПРивет` -> `Привет`, `HEllo` -> `Hello`) on an ALREADY valid dictionary word.
     let (core_stripped, trailing_punct) = split_trailing_punct(word);
     if config.fix_capslock && !core_stripped.is_empty() {
-        if let CasePattern::AccidentalCapsLock = detect_case_pattern(core_stripped) {
+        let pat = detect_case_pattern(core_stripped);
+        if matches!(pat, CasePattern::AccidentalCapsLock | CasePattern::StickyLeadingShift) {
             let core_lower = core_stripped.to_lowercase();
             let (ru_c, en_c) = script_letter_counts(core_stripped);
             let native_lang = if ru_c > en_c { Language::Ru } else { Language::En };
-            if dict.contains(&core_lower, native_lang) {
+            // For sticky leading Shift, require an exact embedded dictionary match (never mutate user terms/acronyms).
+            let valid_target = match pat {
+                CasePattern::AccidentalCapsLock => dict.contains(&core_lower, native_lang),
+                CasePattern::StickyLeadingShift => {
+                    !dict.is_user_word(&core_lower) && dict.rank(&core_lower, native_lang).is_some()
+                }
+                _ => false,
+            };
+            if valid_target {
                 let mut fixed = capitalize_first(core_stripped);
                 fixed.push_str(trailing_punct);
                 return Some(SwitchDecision {
@@ -227,7 +251,14 @@ fn try_switch_token(
     }
 
     // Decision Path A: Converted word is in user dictionary or embedded FST dictionary -> high-confidence switch!
-    let in_target_dict = dst_is_user || dst_rank.is_some();
+    // For 2-letter words, require the target to be a top-400 core word (or explicit user word) so Russian
+    // abbreviations like `пк`, `тк`, `вк`, `тг`, `лс` never falsely switch into obscure EN abbreviations (`gr`, `nr`, `dr`).
+    let is_two_letter = conv_lower.chars().count() == 2;
+    let in_target_dict = if is_two_letter {
+        dst_is_user || dst_rank.is_some_and(|r| r <= 400)
+    } else {
+        dst_is_user || dst_rank.is_some()
+    };
 
     // Decision Path B: Neither word is in FST (e.g. long Russian inflection or rare surname, len >= 4):
     // use deterministic bigram+trigram log-probability comparison.
