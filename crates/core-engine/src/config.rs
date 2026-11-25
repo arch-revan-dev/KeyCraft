@@ -70,6 +70,8 @@ pub struct LayoutConfig {
     pub auto_switch: bool,
     pub fix_capslock: bool,
     pub single_symbol_swap: bool,
+    #[serde(default)]
+    pub undo_on_backspace: bool,
     pub auto_learn_enabled: bool,
     pub auto_learn_threshold: u8,
     pub switch_system_layout: bool,
@@ -81,6 +83,7 @@ impl Default for LayoutConfig {
             auto_switch: true,
             fix_capslock: true,
             single_symbol_swap: true,
+            undo_on_backspace: false,
             auto_learn_enabled: true,
             auto_learn_threshold: 3,
             switch_system_layout: true,

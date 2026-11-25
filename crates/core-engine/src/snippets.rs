@@ -8,6 +8,7 @@ use crate::keymap::{convert_en_to_ru, convert_ru_to_en, script_letter_counts};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SnippetMatch {
+    pub trigger: String,
     pub trigger_char_len: usize,
     pub replacement: String,
     pub snippet_id: String,
@@ -80,6 +81,7 @@ impl SnippetMatcher {
             }
             if buffer_word.ends_with(&item.trigger) {
                 return Some(SnippetMatch {
+                    trigger: item.trigger.clone(),
                     trigger_char_len: item.trigger_chars,
                     replacement: item.replacement.clone(),
                     snippet_id: item.snippet_id.clone(),
@@ -102,6 +104,7 @@ impl SnippetMatcher {
             }
             if word == item.trigger {
                 return Some(SnippetMatch {
+                    trigger: item.trigger.clone(),
                     trigger_char_len: item.trigger_chars,
                     replacement: item.replacement.clone(),
                     snippet_id: item.snippet_id.clone(),

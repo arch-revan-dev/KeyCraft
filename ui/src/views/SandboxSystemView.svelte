@@ -117,7 +117,8 @@
       chars.pop();
       sandboxText = chars.join('');
       enqueueSandbox(async () => {
-        await sandboxProcessEvent({ kind: 'backspace' });
+        const act = await sandboxProcessEvent({ kind: 'backspace' });
+        applyActionToSandbox(act);
       });
       return;
     }

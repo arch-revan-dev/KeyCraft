@@ -517,6 +517,92 @@ fn t75_sticky_shift_ignores_acronyms_and_pascal_code() {
 fn t76_screenshot_enabled_serde_default() {
     let cfg = KeyCraftConfig::default();
     assert!(cfg.screenshot.enabled);
+    assert!(!cfg.layout.undo_on_backspace);
+}
+
+#[test]
+fn t77_undo_on_double_backspace_restores_word() {
+    let mut cfg = KeyCraftConfig::default();
+    cfg.layout.undo_on_backspace = true;
+    let mut eng = KeyCraftEngine::new(cfg);
+    let app = default_app();
+
+    assert_replaced(type_word_and_space(&mut eng, "ghbdtn", Language::En), "привет ");
+    // Backspace #1 removes the trailing space (flush against `привет|`) -> NoOp
+    assert_eq!(eng.process(EngineInput::Backspace, &app), EngineAction::NoOp);
+    // Backspace #2 while flush against `привет` cancels replacement (OS already deleted 1 char -> erase 5 remaining)
+    match eng.process(EngineInput::Backspace, &app) {
+        EngineAction::ReplaceText {
+            backspace_count,
+            text,
+            switch_layout,
+            ..
+        } => {
+            assert_eq!(backspace_count, "привет".chars().count() - 1);
+            assert_eq!(text, "ghbdtn");
+            assert_eq!(switch_layout, Some(Language::En));
+        }
+        other => panic!("expected backspace undo ReplaceText, got {other:?}"),
+    }
+}
+
+#[test]
+fn t78_undo_on_backspace_disabled_by_default() {
+    let mut eng = KeyCraftEngine::new(KeyCraftConfig::default());
+    let app = default_app();
+    assert_replaced(type_word_and_space(&mut eng, "ghbdtn", Language::En), "привет ");
+    assert_eq!(eng.process(EngineInput::Backspace, &app), EngineAction::NoOp);
+    assert_eq!(eng.process(EngineInput::Backspace, &app), EngineAction::NoOp);
+}
+
+#[test]
+fn t79_undo_on_double_backspace_triggers_auto_learn() {
+    let mut cfg = KeyCraftConfig::default();
+    cfg.layout.undo_on_backspace = true;
+    cfg.layout.auto_learn_threshold = 2;
+    let mut eng = KeyCraftEngine::new(cfg);
+    let app = default_app();
+
+    // Cancel #1
+    assert_replaced(type_word_and_space(&mut eng, "ghbdtn", Language::En), "привет ");
+    assert_eq!(eng.process(EngineInput::Backspace, &app), EngineAction::NoOp);
+    match eng.process(EngineInput::Backspace, &app) {
+        EngineAction::ReplaceText { auto_learned_word, .. } => assert_eq!(auto_learned_word, None),
+        other => panic!("unexpected {other:?}"),
+    }
+
+    // Reset and Cancel #2 -> should auto-learn `ghbdtn`
+    eng.reset_buffer();
+    assert_replaced(type_word_and_space(&mut eng, "ghbdtn", Language::En), "привет ");
+    assert_eq!(eng.process(EngineInput::Backspace, &app), EngineAction::NoOp);
+    match eng.process(EngineInput::Backspace, &app) {
+        EngineAction::ReplaceText { auto_learned_word, .. } => {
+            assert_eq!(auto_learned_word.as_deref(), Some("ghbdtn"));
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+    eng.reset_buffer();
+    assert_eq!(type_word_and_space(&mut eng, "ghbdtn", Language::En), EngineAction::NoOp);
+}
+
+#[test]
+fn t80_undo_on_double_backspace_works_for_typos_and_clears_on_typing() {
+    let mut cfg = KeyCraftConfig::default();
+    cfg.layout.undo_on_backspace = true;
+    let mut eng = KeyCraftEngine::new(cfg);
+    let app = default_app();
+
+    // Typo fix `привте` -> `привет ` reverts on double-Backspace
+    assert_replaced(type_word_and_space(&mut eng, "привте", Language::Ru), "привет ");
+    assert_eq!(eng.process(EngineInput::Backspace, &app), EngineAction::NoOp);
+    assert_replaced(eng.process(EngineInput::Backspace, &app), "привте");
+
+    // Typing a new character after Backspace #1 invalidates pending Backspace undo
+    eng.reset_buffer();
+    assert_replaced(type_word_and_space(&mut eng, "ghbdtn", Language::En), "привет ");
+    assert_eq!(eng.process(EngineInput::Backspace, &app), EngineAction::NoOp);
+    assert_eq!(eng.process(EngineInput::Char { ch: 'а', layout: Language::Ru }, &app), EngineAction::NoOp);
+    assert_eq!(eng.process(EngineInput::Backspace, &app), EngineAction::NoOp);
 }
 
 #[test]

@@ -111,6 +111,17 @@
     </SettingRow>
 
     <SettingRow
+      title="Отмена замены двойным Backspace"
+      description="После пробела нажмите Backspace к концу слова и ещё раз Backspace — вместо удаления буквы вернётся исходное слово"
+    >
+      <Toggle
+        checked={config.layout.undo_on_backspace}
+        ariaLabel="Отмена замены двойным Backspace"
+        onchange={(v) => patch((c) => (c.layout.undo_on_backspace = v))}
+      />
+    </SettingRow>
+
+    <SettingRow
       title="Добавлять отменённые слова в белый список"
       description="Если вы несколько раз отменили исправление одного слова, оно защищается автоматически"
     >

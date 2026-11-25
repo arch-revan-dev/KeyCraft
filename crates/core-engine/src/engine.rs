@@ -69,6 +69,15 @@ pub enum EngineAction {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BackspaceUndoStage {
+    Idle,
+    /// Caret sits right after the trailing delimiter of a replaced word (`привет |`).
+    AfterDelimiter,
+    /// Caret sits flush at the end of a replaced word (`привет|`); next Backspace cancels the replacement.
+    FlushAtWordEnd,
+}
+
 pub struct KeyCraftEngine {
     config: KeyCraftConfig,
     dict: Dictionary,
@@ -77,6 +86,7 @@ pub struct KeyCraftEngine {
     history: CorrectionHistory,
     current_layout: Language,
     just_replaced_last_word: bool,
+    backspace_undo_stage: BackspaceUndoStage,
 }
 
 impl KeyCraftEngine {
@@ -92,6 +102,7 @@ impl KeyCraftEngine {
             history: CorrectionHistory::new(),
             current_layout: Language::En,
             just_replaced_last_word: false,
+            backspace_undo_stage: BackspaceUndoStage::Idle,
         }
     }
 
@@ -127,6 +138,7 @@ impl KeyCraftEngine {
         self.buffer.clear_all();
         self.history.clear_last();
         self.just_replaced_last_word = false;
+        self.backspace_undo_stage = BackspaceUndoStage::Idle;
     }
 
     /// Convert arbitrary selected text manually (preserving words/punctuation).
@@ -169,23 +181,31 @@ impl KeyCraftEngine {
             EngineInput::ResetContext => {
                 self.buffer.clear_all();
                 self.just_replaced_last_word = false;
+                self.backspace_undo_stage = BackspaceUndoStage::Idle;
                 EngineAction::NoOp
             }
-            EngineInput::Backspace => {
-                self.buffer.pop_char();
-                self.just_replaced_last_word = false;
-                EngineAction::NoOp
+            EngineInput::Backspace => self.handle_backspace(started),
+            EngineInput::UndoLast => {
+                self.backspace_undo_stage = BackspaceUndoStage::Idle;
+                self.handle_undo(started)
             }
-            EngineInput::UndoLast => self.handle_undo(started),
             EngineInput::SwapLastSymbol { layout } => {
                 self.current_layout = layout;
+                self.backspace_undo_stage = BackspaceUndoStage::Idle;
                 self.handle_symbol_swap(layout, started)
             }
-            EngineInput::ManualConvertLastWord => self.handle_manual_convert_last_word(started),
-            EngineInput::ManualCycleCaseLastWord => self.handle_manual_cycle_case(started),
+            EngineInput::ManualConvertLastWord => {
+                self.backspace_undo_stage = BackspaceUndoStage::Idle;
+                self.handle_manual_convert_last_word(started)
+            }
+            EngineInput::ManualCycleCaseLastWord => {
+                self.backspace_undo_stage = BackspaceUndoStage::Idle;
+                self.handle_manual_cycle_case(started)
+            }
             EngineInput::Char { ch, layout } => {
                 self.current_layout = layout;
                 self.just_replaced_last_word = false;
+                self.backspace_undo_stage = BackspaceUndoStage::Idle;
                 self.history.clear_last();
                 self.buffer.push_word_char(ch);
 
@@ -196,12 +216,13 @@ impl KeyCraftEngine {
                         self.buffer.clear_word_only();
                         self.buffer.set_last_char(repl.chars().last());
                         self.history.record(UndoRecord {
-                            original_word: String::new(),
+                            original_word: m.trigger,
                             replaced_word: repl.clone(),
                             trailing_delimiter: None,
                             restore_layout: None,
                             kind: CorrectionKind::Snippet,
                         });
+                        self.backspace_undo_stage = BackspaceUndoStage::FlushAtWordEnd;
                         return EngineAction::ReplaceText {
                             backspace_count: m.trigger_char_len,
                             text: repl,
@@ -305,6 +326,7 @@ impl KeyCraftEngine {
         let word = self.buffer.commit_word();
         self.buffer.push_line_char(delimiter);
         self.buffer.set_last_char(Some(delimiter));
+        self.backspace_undo_stage = BackspaceUndoStage::Idle;
 
         if word.is_empty() {
             return EngineAction::NoOp;
@@ -318,18 +340,26 @@ impl KeyCraftEngine {
         if allow_snippets {
             if let Some(m) = self.snippets.match_on_delimiter(&word, snippet_activation) {
                 let mut replacement = m.replacement.clone();
-                if delimiter == ' ' {
+                let trailing_delim = if delimiter == ' ' {
                     replacement.push(' ');
-                }
+                    Some(' ')
+                } else {
+                    None
+                };
                 self.buffer.update_last_completed_word(&m.replacement);
                 self.just_replaced_last_word = true;
                 self.history.record(UndoRecord {
                     original_word: word,
                     replaced_word: m.replacement,
-                    trailing_delimiter: if delimiter == ' ' { Some(' ') } else { None },
+                    trailing_delimiter: trailing_delim,
                     restore_layout: None,
                     kind: CorrectionKind::Snippet,
                 });
+                self.backspace_undo_stage = if trailing_delim.is_some() {
+                    BackspaceUndoStage::AfterDelimiter
+                } else {
+                    BackspaceUndoStage::FlushAtWordEnd
+                };
                 return EngineAction::ReplaceText {
                     backspace_count: m.trigger_char_len + 1,
                     text: replacement,
@@ -388,6 +418,7 @@ impl KeyCraftEngine {
                     restore_layout: target_layout.map(Language::opposite),
                     kind,
                 });
+                self.backspace_undo_stage = BackspaceUndoStage::AfterDelimiter;
 
                 return EngineAction::ReplaceText {
                     backspace_count: word.chars().count() + 1,
@@ -421,6 +452,7 @@ impl KeyCraftEngine {
                     restore_layout: None,
                     kind: CorrectionKind::TypoFix,
                 });
+                self.backspace_undo_stage = BackspaceUndoStage::AfterDelimiter;
 
                 return EngineAction::ReplaceText {
                     backspace_count: word.chars().count() + 1,
@@ -452,6 +484,7 @@ impl KeyCraftEngine {
                     restore_layout: None,
                     kind: CorrectionKind::AutoCapitalize,
                 });
+                self.backspace_undo_stage = BackspaceUndoStage::AfterDelimiter;
                 return EngineAction::ReplaceText {
                     backspace_count: word.chars().count() + 1,
                     text: out_text,
@@ -465,6 +498,63 @@ impl KeyCraftEngine {
 
         let _ = layout;
         EngineAction::NoOp
+    }
+
+    fn handle_backspace(&mut self, started: Instant) -> EngineAction {
+        self.buffer.pop_char();
+        self.just_replaced_last_word = false;
+
+        if !self.config.layout.undo_on_backspace || self.history.peek_last().is_none() {
+            self.backspace_undo_stage = BackspaceUndoStage::Idle;
+            return EngineAction::NoOp;
+        }
+
+        match self.backspace_undo_stage {
+            BackspaceUndoStage::Idle => EngineAction::NoOp,
+            BackspaceUndoStage::AfterDelimiter => {
+                // First Backspace erased the trailing space/delimiter; caret is now flush against the replaced word.
+                self.backspace_undo_stage = BackspaceUndoStage::FlushAtWordEnd;
+                EngineAction::NoOp
+            }
+            BackspaceUndoStage::FlushAtWordEnd => {
+                // Second Backspace (while flush against the replaced word) cancels the replacement instead of
+                // deleting the last character. Because the OS/editor already removed 1 char for this Backspace,
+                // erase the remaining `replaced_word.len() - 1` chars and restore `original_word`.
+                self.backspace_undo_stage = BackspaceUndoStage::Idle;
+                let Some((rec, learned)) = self.history.pop_undo(
+                    self.config.layout.auto_learn_enabled,
+                    self.config.layout.auto_learn_threshold,
+                ) else {
+                    return EngineAction::NoOp;
+                };
+
+                let mut learned_added = None;
+                if let Some(word_to_learn) = learned {
+                    if self.add_user_word(&word_to_learn, WordSource::AutoLearned) {
+                        learned_added = Some(word_to_learn);
+                    }
+                }
+
+                let remaining_to_erase = rec.replaced_word.chars().count().saturating_sub(1);
+                self.buffer.clear_word_only();
+                for ch in rec.original_word.chars() {
+                    self.buffer.push_word_char(ch);
+                }
+
+                EngineAction::ReplaceText {
+                    backspace_count: remaining_to_erase,
+                    text: rec.original_word,
+                    switch_layout: rec.restore_layout,
+                    reason: if learned_added.is_some() {
+                        "отмена по Backspace (добавлено в белый список)".to_string()
+                    } else {
+                        "отмена замены по Backspace".to_string()
+                    },
+                    elapsed_us: started.elapsed().as_micros() as u64,
+                    auto_learned_word: learned_added,
+                }
+            }
+        }
     }
 
     fn handle_undo(&mut self, started: Instant) -> EngineAction {

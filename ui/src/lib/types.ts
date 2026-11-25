@@ -8,6 +8,7 @@ export interface LayoutConfig {
   auto_switch: boolean;
   fix_capslock: boolean;
   single_symbol_swap: boolean;
+  undo_on_backspace: boolean;
   auto_learn_enabled: boolean;
   auto_learn_threshold: number;
   switch_system_layout: boolean;

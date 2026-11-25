@@ -20,6 +20,7 @@ export function createDefaultConfig(): KeyCraftConfig {
       auto_switch: true,
       fix_capslock: true,
       single_symbol_swap: true,
+      undo_on_backspace: false,
       auto_learn_enabled: true,
       auto_learn_threshold: 3,
       switch_system_layout: true,
