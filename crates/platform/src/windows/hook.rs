@@ -11,8 +11,9 @@ use std::sync::{Arc, RwLock};
 use crossbeam_channel::Sender;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicodeEx, VK_CONTROL, VK_LMENU,
-    VK_LWIN, VK_MENU, VK_RMENU, VK_RWIN, VK_SHIFT, VK_SNAPSHOT,
+    GetAsyncKeyState, GetKeyboardLayout, GetKeyboardState, ToUnicodeEx, VK_CONTROL, VK_LCONTROL,
+    VK_LMENU, VK_LSHIFT, VK_LWIN, VK_MENU, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_SHIFT,
+    VK_SNAPSHOT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GetForegroundWindow, GetMessageW, GetWindowThreadProcessId, PostThreadMessageW,
@@ -28,6 +29,8 @@ use crate::PlatformEvent;
 /// Unique marker stamped into `SendInput` `dwExtraInfo` so our hook never recurses on own output.
 pub const KEYCRAFT_MAGIC_EXTRA_INFO: usize = 0x4B43_5246_0000_0001;
 
+const VK_S_KEY: u32 = 0x53;
+
 type PrtScBindings = Arc<RwLock<Vec<(PrtScCombo, &'static str)>>>;
 
 struct HookContext {
@@ -35,7 +38,15 @@ struct HookContext {
     active_lone_modifier: u32,
     modifier_tainted: bool,
     prtsc_bindings: PrtScBindings,
+    intercept_win_shift_s: Arc<AtomicBool>,
     swallowed_prtsc_down: bool,
+    swallowed_win_shift_s: bool,
+    // Low-level real-time modifier state (avoids GetAsyncKeyState lag on fast SendInput batches
+    // such as Lenovo FnHotkeyUtility / LenovoUtilityService SendSnippingScanCode).
+    ll_ctrl: bool,
+    ll_alt: bool,
+    ll_shift: bool,
+    ll_win: bool,
 }
 
 thread_local! {
@@ -96,13 +107,10 @@ unsafe extern "system" fn keyboard_hook_proc(
 
         let msg = wparam.0 as u32;
         let vk = kb.vkCode;
+        let is_key_down = matches!(msg, WM_KEYDOWN | WM_SYSKEYDOWN);
+        let is_key_up = matches!(msg, WM_KEYUP | WM_SYSKEYUP);
         let is_alt_key = vk == u32::from(VK_LMENU.0) || vk == u32::from(VK_RMENU.0);
         let is_prtsc = vk == u32::from(VK_SNAPSHOT.0);
-        // LLKHF_ALTDOWN = 0x20: reliable Alt detection even on WM_SYSKEYDOWN/WM_SYSKEYUP
-        let ctrl_down = is_vk_down(VK_CONTROL.0);
-        let alt_down = is_vk_down(VK_MENU.0) || (kb.flags.0 & 0x20) != 0;
-        let shift_down = is_vk_down(VK_SHIFT.0);
-        let win_down = is_vk_down(VK_LWIN.0) || is_vk_down(VK_RWIN.0);
         let mut swallow_key = false;
 
         HOOK_CTX.with(|cell| {
@@ -111,51 +119,91 @@ unsafe extern "system" fn keyboard_hook_proc(
                 return;
             };
 
+            // Keep real-time low-level modifier tracking synchronized on every key transition
+            if vk == u32::from(VK_LCONTROL.0) || vk == u32::from(VK_RCONTROL.0) || vk == u32::from(VK_CONTROL.0) {
+                ctx.ll_ctrl = is_key_down;
+            } else if is_alt_key || vk == u32::from(VK_MENU.0) {
+                ctx.ll_alt = is_key_down;
+            } else if vk == u32::from(VK_LSHIFT.0) || vk == u32::from(VK_RSHIFT.0) || vk == u32::from(VK_SHIFT.0) {
+                ctx.ll_shift = is_key_down;
+            } else if vk == u32::from(VK_LWIN.0) || vk == u32::from(VK_RWIN.0) {
+                ctx.ll_win = is_key_down;
+            }
+
+            // Combine LL state with GetAsyncKeyState + LLKHF_ALTDOWN (0x20)
+            let ctrl_down = ctx.ll_ctrl || is_vk_down(VK_CONTROL.0);
+            let alt_down = ctx.ll_alt || is_vk_down(VK_MENU.0) || (kb.flags.0 & 0x20) != 0;
+            let shift_down = ctx.ll_shift || is_vk_down(VK_SHIFT.0);
+            let win_down = ctx.ll_win || is_vk_down(VK_LWIN.0) || is_vk_down(VK_RWIN.0);
+
             // Intercept PrintScreen combos BEFORE Windows 11's Snipping Tool handler sees VK_SNAPSHOT!
-            // Handles both normal (KEYUP after KEYDOWN) and key-up-only VK_SNAPSHOT keyboards.
+            // Handles normal, key-up-only, and PS/2 fake-Shift (E0 2A E0 37) VK_SNAPSHOT keyboards.
             if is_prtsc {
                 if ctx.active_lone_modifier != 0 {
                     ctx.modifier_tainted = true;
                 }
                 let match_mode = |bindings: &PrtScBindings| -> Option<&'static str> {
                     let guard = bindings.try_read().ok()?;
-                    guard
-                        .iter()
-                        .find(|(c, _)| {
-                            c.ctrl == ctrl_down
-                                && c.alt == alt_down
-                                && c.shift == shift_down
-                                && c.win == win_down
-                        })
-                        .map(|(_, mode)| *mode)
+                    // 1. Exact modifier match
+                    if let Some((_, mode)) = guard.iter().find(|(c, _)| {
+                        c.ctrl == ctrl_down
+                            && c.alt == alt_down
+                            && c.shift == shift_down
+                            && c.win == win_down
+                    }) {
+                        return Some(*mode);
+                    }
+                    // 2. PS/2 hardware fake-Shift fallback for bare PrintScreen
+                    if !ctrl_down && !alt_down && !win_down && shift_down {
+                        if let Some((_, mode)) = guard
+                            .iter()
+                            .find(|(c, _)| !c.ctrl && !c.alt && !c.shift && !c.win)
+                        {
+                            return Some(*mode);
+                        }
+                    }
+                    None
                 };
 
-                match msg {
-                    WM_KEYDOWN | WM_SYSKEYDOWN => {
-                        if let Some(mode) = match_mode(&ctx.prtsc_bindings) {
-                            ctx.swallowed_prtsc_down = true;
-                            swallow_key = true;
-                            let _ = ctx
-                                .tx
-                                .try_send(PlatformEvent::ScreenshotHotkey(mode.to_string()));
-                            return;
-                        }
+                if is_key_down {
+                    if let Some(mode) = match_mode(&ctx.prtsc_bindings) {
+                        ctx.swallowed_prtsc_down = true;
+                        swallow_key = true;
+                        let _ = ctx
+                            .tx
+                            .try_send(PlatformEvent::ScreenshotHotkey(mode.to_string()));
+                        return;
                     }
-                    WM_KEYUP | WM_SYSKEYUP => {
-                        if ctx.swallowed_prtsc_down {
-                            ctx.swallowed_prtsc_down = false;
-                            swallow_key = true;
-                            return;
-                        }
-                        if let Some(mode) = match_mode(&ctx.prtsc_bindings) {
-                            swallow_key = true;
-                            let _ = ctx
-                                .tx
-                                .try_send(PlatformEvent::ScreenshotHotkey(mode.to_string()));
-                            return;
-                        }
+                } else if is_key_up {
+                    if ctx.swallowed_prtsc_down {
+                        ctx.swallowed_prtsc_down = false;
+                        swallow_key = true;
+                        return;
                     }
-                    _ => {}
+                    if let Some(mode) = match_mode(&ctx.prtsc_bindings) {
+                        swallow_key = true;
+                        let _ = ctx
+                            .tx
+                            .try_send(PlatformEvent::ScreenshotHotkey(mode.to_string()));
+                        return;
+                    }
+                }
+            }
+
+            // Intercept Win+Shift+S (sent by Lenovo IdeaPad / ASUS / HP / Dell PrtSc/Scissors keys
+            // and LenovoUtilityService SendSnippingScanCode) when PrintScreen capture is active.
+            if vk == VK_S_KEY && ctx.intercept_win_shift_s.load(Ordering::Relaxed) {
+                if is_key_down && win_down && shift_down && !ctrl_down && !alt_down {
+                    ctx.swallowed_win_shift_s = true;
+                    swallow_key = true;
+                    let _ = ctx
+                        .tx
+                        .try_send(PlatformEvent::ScreenshotHotkey("region".to_string()));
+                    return;
+                } else if is_key_up && ctx.swallowed_win_shift_s {
+                    ctx.swallowed_win_shift_s = false;
+                    swallow_key = true;
+                    return;
                 }
             }
 
@@ -236,10 +284,11 @@ pub struct HookThreadHandle {
     thread_id: Arc<AtomicU32>,
     running: Arc<AtomicBool>,
     prtsc_bindings: PrtScBindings,
+    intercept_win_shift_s: Arc<AtomicBool>,
 }
 
 impl HookThreadHandle {
-    pub fn start(tx: Sender<PlatformEvent>) -> Self {
+    pub fn start(tx: Sender<PlatformEvent>, intercept_win_shift_s: Arc<AtomicBool>) -> Self {
         let thread_id = Arc::new(AtomicU32::new(0));
         let running = Arc::new(AtomicBool::new(true));
         let prtsc_bindings: PrtScBindings = Arc::new(RwLock::new(Vec::new()));
@@ -247,6 +296,7 @@ impl HookThreadHandle {
         let tid_clone = Arc::clone(&thread_id);
         let run_clone = Arc::clone(&running);
         let bindings_clone = Arc::clone(&prtsc_bindings);
+        let snip_flag = Arc::clone(&intercept_win_shift_s);
 
         std::thread::Builder::new()
             .name("keycraft-ll-hooks".to_string())
@@ -260,7 +310,13 @@ impl HookThreadHandle {
                         active_lone_modifier: 0,
                         modifier_tainted: false,
                         prtsc_bindings: bindings_clone,
+                        intercept_win_shift_s: snip_flag,
                         swallowed_prtsc_down: false,
+                        swallowed_win_shift_s: false,
+                        ll_ctrl: false,
+                        ll_alt: false,
+                        ll_shift: false,
+                        ll_win: false,
                     });
                 });
 
@@ -293,6 +349,7 @@ impl HookThreadHandle {
             thread_id,
             running,
             prtsc_bindings,
+            intercept_win_shift_s,
         }
     }
 
@@ -300,9 +357,15 @@ impl HookThreadHandle {
     /// and swallowed in `WH_KEYBOARD_LL` before Windows 11 Snipping Tool receives them.
     pub fn sync_prtsc_bindings(&self, enabled: bool, region: &str, window: &str, fullscreen: &str) {
         let mut next = Vec::new();
+        let mut take_over_snipping = false;
         if enabled {
             if let Some(c) = parse_prtsc_combo(region) {
+                if !c.ctrl && !c.alt && !c.shift && !c.win {
+                    take_over_snipping = true;
+                }
                 next.push((c, "region"));
+            } else if region.eq_ignore_ascii_case("Win+Shift+S") {
+                take_over_snipping = true;
             }
             if let Some(c) = parse_prtsc_combo(window) {
                 next.push((c, "window"));
@@ -311,6 +374,8 @@ impl HookThreadHandle {
                 next.push((c, "fullscreen"));
             }
         }
+        self.intercept_win_shift_s
+            .store(take_over_snipping, Ordering::Relaxed);
         if let Ok(mut guard) = self.prtsc_bindings.write() {
             *guard = next;
         }

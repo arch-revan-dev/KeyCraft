@@ -10,6 +10,7 @@ pub mod hotkeys;
 pub mod injector;
 pub mod pin_window;
 
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
 
 use crossbeam_channel::{bounded, Receiver};
@@ -23,6 +24,7 @@ use crate::{
 
 pub struct WindowsBackend {
     focus_cache: Arc<RwLock<FocusContext>>,
+    intercept_os_snipping: Arc<AtomicBool>,
     hook_handle: Mutex<Option<hook::HookThreadHandle>>,
     hotkey_manager: Mutex<Option<hotkeys::GlobalHotkeyManager>>,
 }
@@ -35,6 +37,7 @@ impl WindowsBackend {
         }
         Ok(Self {
             focus_cache: Arc::new(RwLock::new(FocusContext::default())),
+            intercept_os_snipping: Arc::new(AtomicBool::new(false)),
             hook_handle: Mutex::new(None),
             hotkey_manager: Mutex::new(None),
         })
@@ -44,12 +47,16 @@ impl WindowsBackend {
 impl PlatformBackend for WindowsBackend {
     fn start_hooks(&self) -> PlatformResult<Receiver<PlatformEvent>> {
         let (tx, rx) = bounded::<PlatformEvent>(256);
-        let _focus_thread = focus::spawn_focus_monitor(Arc::clone(&self.focus_cache), tx.clone());
+        let _focus_thread = focus::spawn_focus_monitor(
+            Arc::clone(&self.focus_cache),
+            tx.clone(),
+            Arc::clone(&self.intercept_os_snipping),
+        );
         let hk_mgr = hotkeys::GlobalHotkeyManager::start(tx.clone());
         if let Ok(mut guard) = self.hotkey_manager.lock() {
             *guard = Some(hk_mgr);
         }
-        let handle = hook::HookThreadHandle::start(tx);
+        let handle = hook::HookThreadHandle::start(tx, Arc::clone(&self.intercept_os_snipping));
         if let Ok(mut guard) = self.hook_handle.lock() {
             *guard = Some(handle);
         }

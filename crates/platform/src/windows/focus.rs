@@ -2,12 +2,13 @@
 //! and UIAutomation password-field protection (Zero-Keylogger Architecture).
 
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
 use crossbeam_channel::Sender;
 use keycraft_core_engine::Language;
 use windows::core::PWSTR;
-use windows::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT};
+use windows::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
@@ -20,14 +21,19 @@ use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK,
     UIA_IsPasswordPropertyId,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyboardLayout;
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetKeyboardLayout, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
+    VK_ESCAPE,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetCursorPos, GetForegroundWindow, GetGUIThreadInfo, GetMessageW,
     GetWindowLongW, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
-    IsWindowVisible, EVENT_OBJECT_FOCUS, EVENT_SYSTEM_FOREGROUND, GWL_EXSTYLE, GUITHREADINFO,
-    MSG, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WS_EX_TOOLWINDOW,
+    IsWindowVisible, PostMessageW, EVENT_OBJECT_FOCUS, EVENT_SYSTEM_FOREGROUND, GWL_EXSTYLE,
+    GUITHREADINFO, MSG, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_CLOSE,
+    WS_EX_TOOLWINDOW,
 };
 
+use crate::windows::hook::KEYCRAFT_MAGIC_EXTRA_INFO;
 use crate::{FocusContext, PlatformEvent, RunningAppInfo};
 
 const LANG_RUSSIAN: u16 = 0x19;
@@ -201,10 +207,63 @@ unsafe extern "system" fn win_event_proc(
     });
 }
 
+/// Check whether the foreground window is specifically Windows 11's fullscreen Snipping capture overlay
+/// (e.g. launched directly via OEM ACPI/WMI daemon like Lenovo FnHotkeyUtility bypassing keyboard hooks).
+/// Deliberately ignores the main Snipping Tool editor window so users can still open Snipping Tool manually.
+fn is_windows_snipping_overlay(process_name: &str, window_title: &str) -> bool {
+    let is_snip_proc = process_name.eq_ignore_ascii_case("SnippingTool.exe")
+        || process_name.eq_ignore_ascii_case("ScreenClippingHost.exe");
+    if !is_snip_proc {
+        return false;
+    }
+    let t = window_title.trim();
+    t.eq_ignore_ascii_case("Select area to snip")
+        || t.eq_ignore_ascii_case("Screen Snipping")
+        || t.eq_ignore_ascii_case("Выберите область для фрагмента")
+        || t.eq_ignore_ascii_case("Фрагмент экрана")
+        || t.eq_ignore_ascii_case("Набросок на фрагменте экрана")
+        || process_name.eq_ignore_ascii_case("ScreenClippingHost.exe")
+}
+
+/// Cleanly dismiss Windows 11's Snipping capture overlay via Escape + WM_CLOSE.
+fn dismiss_os_snipping_overlay(hwnd: HWND) {
+    unsafe {
+        let _ = PostMessageW(hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
+        let inputs = [
+            INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_ESCAPE,
+                        wScan: 0,
+                        dwFlags: Default::default(),
+                        time: 0,
+                        dwExtraInfo: KEYCRAFT_MAGIC_EXTRA_INFO,
+                    },
+                },
+            },
+            INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_ESCAPE,
+                        wScan: 0,
+                        dwFlags: KEYEVENTF_KEYUP,
+                        time: 0,
+                        dwExtraInfo: KEYCRAFT_MAGIC_EXTRA_INFO,
+                    },
+                },
+            },
+        ];
+        let _ = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+    }
+}
+
 /// Spawn dedicated WinEventHook + COM UIAutomation worker threads so hook callbacks NEVER stall.
 pub fn spawn_focus_monitor(
     cache: Arc<RwLock<FocusContext>>,
     event_tx: Sender<PlatformEvent>,
+    intercept_os_snipping: Arc<AtomicBool>,
 ) -> std::thread::JoinHandle<()> {
     let (ping_tx, ping_rx) = crossbeam_channel::bounded::<()>(8);
 
@@ -224,11 +283,35 @@ pub fn spawn_focus_monitor(
             let mut prev = refresh_focus_context(uia.as_ref(), &cache_worker);
             let _ = event_tx_worker.try_send(PlatformEvent::FocusChanged(prev.clone()));
             let mut last_uia_check = std::time::Instant::now();
+            let mut last_snip_redirect = std::time::Instant::now()
+                .checked_sub(std::time::Duration::from_secs(5))
+                .unwrap_or_else(std::time::Instant::now);
 
             // Poll layout gently every 250ms while waiting for WinEvent pings; debounce UIA to avoid RPC storms.
             loop {
                 match ping_rx.recv_timeout(std::time::Duration::from_millis(250)) {
                     Ok(()) => {
+                        // Fast-path check BEFORE debounce: catch OEM-launched Windows Snipping overlay immediately
+                        if intercept_os_snipping.load(Ordering::Relaxed)
+                            && last_snip_redirect.elapsed() > std::time::Duration::from_millis(800)
+                        {
+                            let fg = unsafe { GetForegroundWindow() };
+                            if !fg.0.is_null() {
+                                let proc_name = process_name_for_hwnd(fg);
+                                let title = window_title_for_hwnd(fg);
+                                if is_windows_snipping_overlay(&proc_name, &title) {
+                                    last_snip_redirect = std::time::Instant::now();
+                                    dismiss_os_snipping_overlay(fg);
+                                    // Wait briefly for Windows dimmed capture layer to clear before KeyCraft captures
+                                    std::thread::sleep(std::time::Duration::from_millis(160));
+                                    let _ = event_tx_worker.try_send(
+                                        PlatformEvent::ScreenshotHotkey("region".to_string()),
+                                    );
+                                    continue;
+                                }
+                            }
+                        }
+
                         // Coalesce burst focus notifications from browsers/lists
                         std::thread::sleep(std::time::Duration::from_millis(20));
                         while ping_rx.try_recv().is_ok() {}
