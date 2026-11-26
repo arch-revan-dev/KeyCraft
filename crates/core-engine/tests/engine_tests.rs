@@ -606,6 +606,77 @@ fn t80_undo_on_double_backspace_works_for_typos_and_clears_on_typing() {
 }
 
 #[test]
+fn t81_double_backspace_undo_then_space_does_not_retrigger_layout_or_typo() {
+    let mut cfg = KeyCraftConfig::default();
+    cfg.layout.undo_on_backspace = true;
+    let mut eng = KeyCraftEngine::new(cfg);
+    let app = default_app();
+
+    // 1. Layout switch: `ghbdtn ` -> `привет `, 2x Backspace -> `ghbdtn`, then Space MUST stay `ghbdtn `
+    assert_replaced(type_word_and_space(&mut eng, "ghbdtn", Language::En), "привет ");
+    assert_eq!(eng.process(EngineInput::Backspace, &app), EngineAction::NoOp);
+    assert_replaced(eng.process(EngineInput::Backspace, &app), "ghbdtn");
+    assert_eq!(eng.process(EngineInput::Space { layout: Language::En }, &app), EngineAction::NoOp);
+
+    // 2. Typo fix: `привте ` -> `привет `, 2x Backspace -> `привте`, then `,` + Space MUST stay `привте, `
+    assert_replaced(type_word_and_space(&mut eng, "привте", Language::Ru), "привет ");
+    assert_eq!(eng.process(EngineInput::Backspace, &app), EngineAction::NoOp);
+    assert_replaced(eng.process(EngineInput::Backspace, &app), "привте");
+    assert_eq!(eng.process(EngineInput::Char { ch: ',', layout: Language::Ru }, &app), EngineAction::NoOp);
+    assert_eq!(eng.process(EngineInput::Space { layout: Language::Ru }, &app), EngineAction::NoOp);
+
+    // 3. Subsequent normal word still auto-switches cleanly
+    assert_replaced(type_word_and_space(&mut eng, "руддщ", Language::Ru), "hello ");
+}
+
+#[test]
+fn t82_double_backspace_undo_then_space_does_not_retrigger_snippet() {
+    let mut cfg = KeyCraftConfig::default();
+    cfg.layout.undo_on_backspace = true;
+    let mut eng = KeyCraftEngine::new(cfg);
+    let app = default_app();
+
+    // Space-activated snippet: `-> ` -> `→ `, 2x Backspace -> `->`, then Space MUST stay `-> `
+    assert_replaced(type_word_and_space(&mut eng, "->", Language::En), "→ ");
+    assert_eq!(eng.process(EngineInput::Backspace, &app), EngineAction::NoOp);
+    assert_replaced(eng.process(EngineInput::Backspace, &app), "->");
+    assert_eq!(eng.process(EngineInput::Space { layout: Language::En }, &app), EngineAction::NoOp);
+
+    // Instant snippet: `<<` -> `«`, 1x Backspace -> `<<`, then Space MUST stay `<< `
+    assert_eq!(eng.process(EngineInput::Char { ch: '<', layout: Language::En }, &app), EngineAction::NoOp);
+    assert_replaced(eng.process(EngineInput::Char { ch: '<', layout: Language::En }, &app), "«");
+    assert_replaced(eng.process(EngineInput::Backspace, &app), "<<");
+    assert_eq!(eng.process(EngineInput::Space { layout: Language::En }, &app), EngineAction::NoOp);
+}
+
+#[test]
+fn t83_double_backspace_undo_then_enter_does_not_retrigger_and_auto_learn_still_works() {
+    let mut cfg = KeyCraftConfig::default();
+    cfg.layout.undo_on_backspace = true;
+    cfg.layout.auto_learn_threshold = 2;
+    let mut eng = KeyCraftEngine::new(cfg);
+    let app = default_app();
+
+    // Undo #1 + Enter stays restored
+    assert_replaced(type_word_and_space(&mut eng, "ghbdtn", Language::En), "привет ");
+    assert_eq!(eng.process(EngineInput::Backspace, &app), EngineAction::NoOp);
+    assert_replaced(eng.process(EngineInput::Backspace, &app), "ghbdtn");
+    assert_eq!(eng.process(EngineInput::Enter { layout: Language::En }, &app), EngineAction::NoOp);
+
+    // Typing `ghbdtn` again on the new line auto-switches (+ sentence start capitalization) and auto-learns on Undo #2
+    assert_replaced(type_word_and_space(&mut eng, "ghbdtn", Language::En), "Привет ");
+    assert_eq!(eng.process(EngineInput::Backspace, &app), EngineAction::NoOp);
+    match eng.process(EngineInput::Backspace, &app) {
+        EngineAction::ReplaceText { text, auto_learned_word, .. } => {
+            assert_eq!(text, "ghbdtn");
+            assert_eq!(auto_learned_word.as_deref(), Some("ghbdtn"));
+        }
+        other => panic!("expected auto-learned undo, got {other:?}"),
+    }
+    assert_eq!(eng.process(EngineInput::Space { layout: Language::En }, &app), EngineAction::NoOp);
+}
+
+#[test]
 fn t51_typo_can_be_disabled() {
     let mut cfg = KeyCraftConfig::default();
     cfg.typos.enabled = false;

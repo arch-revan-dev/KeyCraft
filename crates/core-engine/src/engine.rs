@@ -87,6 +87,8 @@ pub struct KeyCraftEngine {
     current_layout: Language,
     just_replaced_last_word: bool,
     backspace_undo_stage: BackspaceUndoStage,
+    /// Word just restored by Backspace-undo; suppresses immediate re-correction on the following delimiter.
+    skip_next_auto_for_word: Option<String>,
 }
 
 impl KeyCraftEngine {
@@ -103,6 +105,7 @@ impl KeyCraftEngine {
             current_layout: Language::En,
             just_replaced_last_word: false,
             backspace_undo_stage: BackspaceUndoStage::Idle,
+            skip_next_auto_for_word: None,
         }
     }
 
@@ -139,6 +142,7 @@ impl KeyCraftEngine {
         self.history.clear_last();
         self.just_replaced_last_word = false;
         self.backspace_undo_stage = BackspaceUndoStage::Idle;
+        self.skip_next_auto_for_word = None;
     }
 
     /// Convert arbitrary selected text manually (preserving words/punctuation).
@@ -182,30 +186,38 @@ impl KeyCraftEngine {
                 self.buffer.clear_all();
                 self.just_replaced_last_word = false;
                 self.backspace_undo_stage = BackspaceUndoStage::Idle;
+                self.skip_next_auto_for_word = None;
                 EngineAction::NoOp
             }
             EngineInput::Backspace => self.handle_backspace(started),
             EngineInput::UndoLast => {
                 self.backspace_undo_stage = BackspaceUndoStage::Idle;
+                self.skip_next_auto_for_word = None;
                 self.handle_undo(started)
             }
             EngineInput::SwapLastSymbol { layout } => {
                 self.current_layout = layout;
                 self.backspace_undo_stage = BackspaceUndoStage::Idle;
+                self.skip_next_auto_for_word = None;
                 self.handle_symbol_swap(layout, started)
             }
             EngineInput::ManualConvertLastWord => {
                 self.backspace_undo_stage = BackspaceUndoStage::Idle;
+                self.skip_next_auto_for_word = None;
                 self.handle_manual_convert_last_word(started)
             }
             EngineInput::ManualCycleCaseLastWord => {
                 self.backspace_undo_stage = BackspaceUndoStage::Idle;
+                self.skip_next_auto_for_word = None;
                 self.handle_manual_cycle_case(started)
             }
             EngineInput::Char { ch, layout } => {
                 self.current_layout = layout;
                 self.just_replaced_last_word = false;
                 self.backspace_undo_stage = BackspaceUndoStage::Idle;
+                if !is_trailing_punctuation(ch) {
+                    self.skip_next_auto_for_word = None;
+                }
                 self.history.clear_last();
                 self.buffer.push_word_char(ch);
 
@@ -327,6 +339,7 @@ impl KeyCraftEngine {
         self.buffer.push_line_char(delimiter);
         self.buffer.set_last_char(Some(delimiter));
         self.backspace_undo_stage = BackspaceUndoStage::Idle;
+        let skip_word = self.skip_next_auto_for_word.take();
 
         if word.is_empty() {
             return EngineAction::NoOp;
@@ -335,6 +348,16 @@ impl KeyCraftEngine {
         let was_sentence_start = self.buffer.is_sentence_start();
         let ends_sentence = word.ends_with('.') || word.ends_with('!') || word.ends_with('?');
         self.buffer.set_sentence_start(ends_sentence);
+
+        // If the user just cancelled a correction via double-Backspace and now presses Space/Tab/Enter
+        // (optionally after trailing punctuation like `,` or `.`), keep the restored word as-is.
+        if let Some(ref suppressed) = skip_word {
+            let trimmed = word.trim_end_matches(is_trailing_punctuation);
+            if word == *suppressed || (!trimmed.is_empty() && trimmed == suppressed.as_str()) {
+                let _ = layout;
+                return EngineAction::NoOp;
+            }
+        }
 
         // 1. Snippets on Space / Tab
         if allow_snippets {
@@ -503,6 +526,7 @@ impl KeyCraftEngine {
     fn handle_backspace(&mut self, started: Instant) -> EngineAction {
         self.buffer.pop_char();
         self.just_replaced_last_word = false;
+        self.skip_next_auto_for_word = None;
 
         if !self.config.layout.undo_on_backspace || self.history.peek_last().is_none() {
             self.backspace_undo_stage = BackspaceUndoStage::Idle;
@@ -540,6 +564,7 @@ impl KeyCraftEngine {
                 for ch in rec.original_word.chars() {
                     self.buffer.push_word_char(ch);
                 }
+                self.skip_next_auto_for_word = Some(rec.original_word.clone());
 
                 EngineAction::ReplaceText {
                     backspace_count: remaining_to_erase,
@@ -697,4 +722,8 @@ impl KeyCraftEngine {
             auto_learned_word: None,
         }
     }
+}
+
+fn is_trailing_punctuation(ch: char) -> bool {
+    matches!(ch, '.' | ',' | '!' | '?' | ';' | ':' | ')' | ']' | '»' | '"')
 }
