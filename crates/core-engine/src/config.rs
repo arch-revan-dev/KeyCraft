@@ -306,7 +306,7 @@ pub fn default_snippets() -> Vec<SnippetEntry> {
             triggers: vec!["р-".to_string(), "Р-".to_string()],
             replacement: "₽".to_string(),
             activation: SnippetActivation::Space,
-            any_layout: false,
+            any_layout: true,
             enabled: true,
         },
         SnippetEntry {
@@ -314,7 +314,7 @@ pub fn default_snippets() -> Vec<SnippetEntry> {
             triggers: vec!["---".to_string()],
             replacement: "—".to_string(),
             activation: SnippetActivation::Space,
-            any_layout: false,
+            any_layout: true,
             enabled: true,
         },
         SnippetEntry {
@@ -322,7 +322,7 @@ pub fn default_snippets() -> Vec<SnippetEntry> {
             triggers: vec!["<<".to_string()],
             replacement: "«".to_string(),
             activation: SnippetActivation::Instant,
-            any_layout: false,
+            any_layout: true,
             enabled: true,
         },
         SnippetEntry {
@@ -330,7 +330,7 @@ pub fn default_snippets() -> Vec<SnippetEntry> {
             triggers: vec![">>".to_string()],
             replacement: "»".to_string(),
             activation: SnippetActivation::Instant,
-            any_layout: false,
+            any_layout: true,
             enabled: true,
         },
         SnippetEntry {
@@ -338,7 +338,7 @@ pub fn default_snippets() -> Vec<SnippetEntry> {
             triggers: vec!["+-".to_string()],
             replacement: "±".to_string(),
             activation: SnippetActivation::Space,
-            any_layout: false,
+            any_layout: true,
             enabled: true,
         },
         SnippetEntry {
@@ -346,7 +346,7 @@ pub fn default_snippets() -> Vec<SnippetEntry> {
             triggers: vec!["->".to_string()],
             replacement: "→".to_string(),
             activation: SnippetActivation::Space,
-            any_layout: false,
+            any_layout: true,
             enabled: true,
         },
         SnippetEntry {
@@ -354,7 +354,7 @@ pub fn default_snippets() -> Vec<SnippetEntry> {
             triggers: vec!["(c)".to_string(), "(C)".to_string()],
             replacement: "©".to_string(),
             activation: SnippetActivation::Instant,
-            any_layout: false,
+            any_layout: true,
             enabled: true,
         },
     ]

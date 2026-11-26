@@ -87,6 +87,16 @@ impl PlatformBackend for WindowsBackend {
         focus::query_foreground_layout()
     }
 
+    fn resolve_key(
+        &self,
+        vk_code: u32,
+        scan_code: u32,
+        shift: bool,
+        caps_lock: bool,
+    ) -> (Option<char>, Language) {
+        hook::resolve_key_off_hook(vk_code, scan_code, shift, caps_lock)
+    }
+
     fn set_layout(&self, layout: Language) -> PlatformResult<()> {
         injector::set_foreground_layout(layout)
     }

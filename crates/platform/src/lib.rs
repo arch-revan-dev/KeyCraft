@@ -76,17 +76,15 @@ pub enum PlatformEvent {
     KeyDown {
         vk_code: u32,
         scan_code: u32,
-        ch: Option<char>,
         ctrl: bool,
         alt: bool,
         shift: bool,
         win: bool,
-        layout: Language,
+        caps_lock: bool,
     },
     KeyUp {
         vk_code: u32,
         was_lone_tap: bool,
-        layout: Language,
     },
     MouseClick,
     FocusChanged(FocusContext),
@@ -122,6 +120,17 @@ pub trait PlatformBackend: Send + Sync {
 
     /// Query current active input language of the foreground thread.
     fn current_layout(&self) -> Language;
+
+    /// Translate a virtual key + scan code into a Unicode character and active layout OFF the hook thread.
+    fn resolve_key(
+        &self,
+        _vk_code: u32,
+        _scan_code: u32,
+        _shift: bool,
+        _caps_lock: bool,
+    ) -> (Option<char>, Language) {
+        (None, self.current_layout())
+    }
 
     /// Switch the foreground window's keyboard layout (`RU` / `EN`).
     fn set_layout(&self, layout: Language) -> PlatformResult<()>;

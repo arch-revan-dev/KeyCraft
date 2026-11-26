@@ -50,19 +50,27 @@ impl SnippetMatcher {
 
                 if snip.any_layout {
                     let (ru_c, en_c) = script_letter_counts(trig);
-                    let mapped = if ru_c >= en_c {
-                        convert_ru_to_en(trig)
+                    let mut variants = Vec::new();
+                    if ru_c > en_c {
+                        variants.push(convert_ru_to_en(trig));
+                    } else if en_c > ru_c {
+                        variants.push(convert_en_to_ru(trig));
                     } else {
-                        convert_en_to_ru(trig)
-                    };
-                    if mapped != trig && !mapped.is_empty() {
-                        entries.push(CompiledTrigger {
-                            trigger: mapped.clone(),
-                            trigger_chars: mapped.chars().count(),
-                            replacement: snip.replacement.clone(),
-                            activation: snip.activation,
-                            snippet_id: snip.id.clone(),
-                        });
+                        variants.push(convert_en_to_ru(trig));
+                        variants.push(convert_ru_to_en(trig));
+                    }
+                    let mut seen = Vec::new();
+                    for mapped in variants {
+                        if mapped != trig && !mapped.is_empty() && !seen.contains(&mapped) {
+                            seen.push(mapped.clone());
+                            entries.push(CompiledTrigger {
+                                trigger_chars: mapped.chars().count(),
+                                trigger: mapped,
+                                replacement: snip.replacement.clone(),
+                                activation: snip.activation,
+                                snippet_id: snip.id.clone(),
+                            });
+                        }
                     }
                 }
             }

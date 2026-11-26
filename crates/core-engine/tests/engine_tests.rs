@@ -727,6 +727,21 @@ fn t55_snippet_instant_guillemets_and_copyright() {
 }
 
 #[test]
+fn t84_default_snippets_work_across_all_layouts() {
+    let mut eng = KeyCraftEngine::new(KeyCraftConfig::default());
+    let app = default_app();
+
+    // `р-` typed on EN layout (`h-`) -> `₽ `
+    assert_replaced(type_word_and_space(&mut eng, "h-", Language::En), "₽ ");
+    // `->` typed on RU layout (`-Ю`) -> `→ `
+    assert_replaced(type_word_and_space(&mut eng, "-Ю", Language::Ru), "→ ");
+    // `(c)` typed with Russian `с` (`(с)`) -> `©`
+    eng.process(EngineInput::Char { ch: '(', layout: Language::Ru }, &app);
+    eng.process(EngineInput::Char { ch: 'с', layout: Language::Ru }, &app);
+    assert_replaced(eng.process(EngineInput::Char { ch: ')', layout: Language::Ru }, &app), "©");
+}
+
+#[test]
 fn t56_snippet_cross_layout_any_layout() {
     let mut cfg = KeyCraftConfig::default();
     cfg.snippets.push(SnippetEntry {

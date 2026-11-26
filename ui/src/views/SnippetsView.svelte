@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Plus, Trash2, Replace } from 'lucide-svelte';
+  import { Plus, Trash2, Replace, Pencil, Check, X } from 'lucide-svelte';
   import SettingGroup from '../components/SettingGroup.svelte';
   import Toggle from '../components/Toggle.svelte';
   import SegmentedControl from '../components/SegmentedControl.svelte';
@@ -17,13 +17,23 @@
   let triggersRaw = $state('');
   let replacement = $state('');
   let activation = $state<SnippetActivation>('space');
-  let anyLayout = $state(false);
+  let anyLayout = $state(true);
 
-  function addSnippet() {
-    const triggers = triggersRaw
+  let editingId = $state<string | null>(null);
+  let editTriggersRaw = $state('');
+  let editReplacement = $state('');
+  let editActivation = $state<SnippetActivation>('space');
+  let editAnyLayout = $state(true);
+
+  function parseTriggers(raw: string): string[] {
+    return raw
       .split(/\s+/)
       .map((s) => s.trim())
       .filter(Boolean);
+  }
+
+  function addSnippet() {
+    const triggers = parseTriggers(triggersRaw);
     if (triggers.length === 0 || !replacement) return;
 
     const next = cloneConfig(config);
@@ -38,7 +48,33 @@
     onupdate(next);
     triggersRaw = '';
     replacement = '';
-    anyLayout = false;
+    anyLayout = true;
+  }
+
+  function startEdit(snip: SnippetEntry) {
+    editingId = snip.id;
+    editTriggersRaw = snip.triggers.join(' ');
+    editReplacement = snip.replacement;
+    editActivation = snip.activation;
+    editAnyLayout = snip.any_layout;
+  }
+
+  function cancelEdit() {
+    editingId = null;
+  }
+
+  function saveEdit() {
+    if (!editingId) return;
+    const triggers = parseTriggers(editTriggersRaw);
+    if (triggers.length === 0 || !editReplacement) return;
+    const id = editingId;
+    updateSnippet(id, (s) => {
+      s.triggers = triggers;
+      s.replacement = editReplacement;
+      s.activation = editActivation;
+      s.any_layout = editAnyLayout;
+    });
+    editingId = null;
   }
 
   function updateSnippet(id: string, mutator: (s: SnippetEntry) => void) {
@@ -50,6 +86,7 @@
   }
 
   function removeSnippet(id: string) {
+    if (editingId === id) editingId = null;
     const next = cloneConfig(config);
     next.snippets = next.snippets.filter((s) => s.id !== id);
     onupdate(next);
@@ -129,39 +166,103 @@
     {:else}
       <div class="snippet-table">
         {#each config.snippets as snip (snip.id)}
-          <div class="snippet-row" class:disabled={!snip.enabled}>
-            <div class="snip-main">
-              <div class="snip-triggers">
-                {#each snip.triggers as trig}
-                  <code class="trig-chip mono">{trig}</code>
-                {/each}
-                <span class="arrow">→</span>
-                <span class="snip-repl">{snip.replacement}</span>
+          {#if editingId === snip.id}
+            <form
+              class="snippet-edit-form"
+              onsubmit={(e) => {
+                e.preventDefault();
+                saveEdit();
+              }}
+              onkeydown={(e) => {
+                if (e.key === 'Escape') cancelEdit();
+              }}
+            >
+              <div class="form-grid">
+                <label class="field">
+                  <span class="field-label">Триггеры (через пробел)</span>
+                  <input type="text" bind:value={editTriggersRaw} class="mono" />
+                </label>
+                <label class="field">
+                  <span class="field-label">Замена</span>
+                  <input type="text" bind:value={editReplacement} />
+                </label>
               </div>
-              <div class="snip-meta">
-                <span class="badge">{activationLabel(snip.activation)}</span>
-                {#if snip.any_layout}
-                  <span class="badge badge-accent">Любая раскладка</span>
-                {/if}
+              <div class="form-footer">
+                <div class="form-opts">
+                  <SegmentedControl
+                    options={[
+                      { value: 'space', label: 'По Space' },
+                      { value: 'tab', label: 'По Tab' },
+                      { value: 'instant', label: 'Мгновенно' },
+                    ]}
+                    bind:value={editActivation}
+                  />
+                  <label class="check-label">
+                    <Toggle bind:checked={editAnyLayout} ariaLabel="Срабатывать в любой раскладке" />
+                    <span>В любой раскладке</span>
+                  </label>
+                </div>
+                <div class="edit-actions">
+                  <button type="button" class="btn btn-ghost" onclick={cancelEdit}>
+                    <X size={14} strokeWidth={1.5} />
+                    Отмена
+                  </button>
+                  <button
+                    type="submit"
+                    class="btn btn-primary"
+                    disabled={!editTriggersRaw.trim() || !editReplacement}
+                  >
+                    <Check size={14} strokeWidth={1.5} />
+                    Сохранить
+                  </button>
+                </div>
               </div>
-            </div>
+            </form>
+          {:else}
+            <div class="snippet-row" class:disabled={!snip.enabled}>
+              <div class="snip-main">
+                <div class="snip-triggers">
+                  {#each snip.triggers as trig}
+                    <code class="trig-chip mono">{trig}</code>
+                  {/each}
+                  <span class="arrow">→</span>
+                  <span class="snip-repl">{snip.replacement}</span>
+                </div>
+                <div class="snip-meta">
+                  <span class="badge">{activationLabel(snip.activation)}</span>
+                  {#if snip.any_layout}
+                    <span class="badge badge-accent">Любая раскладка</span>
+                  {/if}
+                </div>
+              </div>
 
-            <div class="snip-actions">
-              <Toggle
-                checked={snip.enabled}
-                ariaLabel={`Включить сниппет ${snip.triggers.join(' ')}`}
-                onchange={(v) => updateSnippet(snip.id, (s) => (s.enabled = v))}
-              />
-              <button
-                type="button"
-                class="btn btn-danger btn-icon"
-                aria-label="Удалить автоподмену"
-                onclick={() => removeSnippet(snip.id)}
-              >
-                <Trash2 size={14} strokeWidth={1.5} />
-              </button>
+              <div class="snip-actions">
+                <Toggle
+                  checked={snip.enabled}
+                  ariaLabel={`Включить сниппет ${snip.triggers.join(' ')}`}
+                  onchange={(v) => updateSnippet(snip.id, (s) => (s.enabled = v))}
+                />
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-icon"
+                  title="Редактировать автоподмену"
+                  aria-label="Редактировать автоподмену"
+                  onclick={() => startEdit(snip)}
+                >
+                  <Pencil size={14} strokeWidth={1.5} />
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-danger btn-icon"
+                  title="Удалить автоподмену"
+                  aria-label="Удалить автоподмену"
+                  onclick={() => removeSnippet(snip.id)}
+                >
+                  <Trash2 size={14} strokeWidth={1.5} />
+                </button>
+              </div>
             </div>
-          </div>
+          {/if}
         {/each}
       </div>
     {/if}
@@ -237,8 +338,24 @@
     min-height: 46px;
   }
 
-  .snippet-row + .snippet-row {
+  .snippet-row + .snippet-row,
+  .snippet-row + .snippet-edit-form,
+  .snippet-edit-form + .snippet-row {
     border-top: 1px solid var(--border-subtle);
+  }
+
+  .snippet-edit-form {
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: var(--bg-control);
+  }
+
+  .edit-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .snippet-row.disabled {

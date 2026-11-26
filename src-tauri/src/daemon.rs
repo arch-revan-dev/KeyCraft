@@ -127,15 +127,38 @@ fn parse_hotkey(spec: &str) -> Option<ParsedHotkey> {
     })
 }
 
-fn matches_keydown_hotkey(
-    spec: &str,
+#[derive(Debug, Clone, Default)]
+struct CachedHotkeys {
+    raw: HotkeyConfig,
+    undo: Option<ParsedHotkey>,
+    swap_symbol: Option<ParsedHotkey>,
+    convert: Option<ParsedHotkey>,
+    cycle_case: Option<ParsedHotkey>,
+    add_dict: Option<ParsedHotkey>,
+}
+
+impl CachedHotkeys {
+    fn sync(&mut self, cfg: &HotkeyConfig) {
+        if self.raw != *cfg {
+            self.raw = cfg.clone();
+            self.undo = parse_hotkey(&cfg.undo_last_action);
+            self.swap_symbol = parse_hotkey(&cfg.swap_last_symbol);
+            self.convert = parse_hotkey(&cfg.convert_selection_or_word);
+            self.cycle_case = parse_hotkey(&cfg.cycle_case);
+            self.add_dict = parse_hotkey(&cfg.add_to_dictionary);
+        }
+    }
+}
+
+fn matches_parsed_keydown(
+    hk: &Option<ParsedHotkey>,
     vk: u32,
     ctrl: bool,
     alt: bool,
     shift: bool,
     win: bool,
 ) -> bool {
-    let Some(hk) = parse_hotkey(spec) else {
+    let Some(hk) = hk else {
         return false;
     };
     !hk.lone_modifier
@@ -146,11 +169,11 @@ fn matches_keydown_hotkey(
         && hk.win == win
 }
 
-fn matches_lone_tap_hotkey(spec: &str, vk: u32, was_lone_tap: bool) -> bool {
+fn matches_parsed_lone_tap(hk: &Option<ParsedHotkey>, vk: u32, was_lone_tap: bool) -> bool {
     if !was_lone_tap {
         return false;
     }
-    let Some(hk) = parse_hotkey(spec) else {
+    let Some(hk) = hk else {
         return false;
     };
     hk.lone_modifier && hk.vk == vk
@@ -179,6 +202,10 @@ pub fn start_daemon(app: AppHandle) {
             let mut last_process = String::new();
             let mut last_layout = Language::En;
             let mut last_screenshot_at: Option<std::time::Instant> = None;
+            let mut cached_hotkeys = CachedHotkeys::default();
+            if let Ok(eng) = app.state::<AppState>().engine.lock() {
+                cached_hotkeys.sync(&eng.config().hotkeys);
+            }
 
             while let Ok(evt) = rx.recv() {
                 let state = app.state::<AppState>();
@@ -253,45 +280,55 @@ pub fn start_daemon(app: AppHandle) {
                     PlatformEvent::KeyUp {
                         vk_code,
                         was_lone_tap,
-                        layout,
                     } => {
-                        let hotkeys = state
-                            .engine
-                            .lock()
-                            .map(|e| e.config().hotkeys.clone())
-                            .unwrap_or_default();
+                        if let Ok(eng) = state.engine.lock() {
+                            cached_hotkeys.sync(&eng.config().hotkeys);
+                        }
+                        let is_swap = matches_parsed_lone_tap(
+                            &cached_hotkeys.swap_symbol,
+                            vk_code,
+                            was_lone_tap,
+                        );
+                        let is_undo =
+                            matches_parsed_lone_tap(&cached_hotkeys.undo, vk_code, was_lone_tap);
+                        if !is_swap && !is_undo {
+                            continue;
+                        }
                         let focus = state.platform.current_focus();
                         let app_ctx = ActiveAppState {
                             process_name: focus.process_name,
                             is_password_field: focus.is_password_field,
                         };
 
-                        if matches_lone_tap_hotkey(&hotkeys.swap_last_symbol, vk_code, was_lone_tap)
-                        {
-                            run_engine_input(&state, EngineInput::SwapLastSymbol { layout }, &app_ctx);
-                        } else if matches_lone_tap_hotkey(
-                            &hotkeys.undo_last_action,
-                            vk_code,
-                            was_lone_tap,
-                        ) {
-                            run_engine_input(&state, EngineInput::UndoLast, &app_ctx);
+                        if is_swap {
+                            let layout = state.platform.current_layout();
+                            run_engine_input(
+                                &state,
+                                EngineInput::SwapLastSymbol { layout },
+                                &app_ctx,
+                                0,
+                            );
+                        } else if is_undo {
+                            run_engine_input(&state, EngineInput::UndoLast, &app_ctx, 0);
                         }
                     }
                     PlatformEvent::KeyDown {
                         vk_code,
-                        ch,
+                        scan_code,
                         ctrl,
                         alt,
                         shift,
                         win,
-                        layout,
-                        ..
+                        caps_lock,
                     } => {
-                        let (enabled, hotkeys) = state
+                        let enabled = state
                             .engine
                             .lock()
-                            .map(|e| (e.config().enabled, e.config().hotkeys.clone()))
-                            .unwrap_or((true, HotkeyConfig::default()));
+                            .map(|e| {
+                                cached_hotkeys.sync(&e.config().hotkeys);
+                                e.config().enabled
+                            })
+                            .unwrap_or(true);
 
                         if !enabled {
                             continue;
@@ -299,7 +336,7 @@ pub fn start_daemon(app: AppHandle) {
 
                         let focus = state.platform.current_focus();
                         let app_ctx = ActiveAppState {
-                            process_name: focus.process_name.clone(),
+                            process_name: focus.process_name,
                             is_password_field: focus.is_password_field,
                         };
 
@@ -314,33 +351,39 @@ pub fn start_daemon(app: AppHandle) {
                             continue;
                         }
 
-                        // Check configured action hotkeys
-                        if matches_keydown_hotkey(
-                            &hotkeys.undo_last_action,
+                        // Check cached parsed action hotkeys (zero heap allocations per keystroke)
+                        if matches_parsed_keydown(
+                            &cached_hotkeys.undo,
                             vk_code,
                             ctrl,
                             alt,
                             shift,
                             win,
                         ) {
-                            run_engine_input(&state, EngineInput::UndoLast, &app_ctx);
+                            run_engine_input(&state, EngineInput::UndoLast, &app_ctx, 0);
                             continue;
                         }
 
-                        if matches_keydown_hotkey(
-                            &hotkeys.swap_last_symbol,
+                        if matches_parsed_keydown(
+                            &cached_hotkeys.swap_symbol,
                             vk_code,
                             ctrl,
                             alt,
                             shift,
                             win,
                         ) {
-                            run_engine_input(&state, EngineInput::SwapLastSymbol { layout }, &app_ctx);
+                            let layout = state.platform.current_layout();
+                            run_engine_input(
+                                &state,
+                                EngineInput::SwapLastSymbol { layout },
+                                &app_ctx,
+                                0,
+                            );
                             continue;
                         }
 
-                        if matches_keydown_hotkey(
-                            &hotkeys.convert_selection_or_word,
+                        if matches_parsed_keydown(
+                            &cached_hotkeys.convert,
                             vk_code,
                             ctrl,
                             alt,
@@ -351,14 +394,20 @@ pub fn start_daemon(app: AppHandle) {
                             continue;
                         }
 
-                        if matches_keydown_hotkey(&hotkeys.cycle_case, vk_code, ctrl, alt, shift, win)
-                        {
+                        if matches_parsed_keydown(
+                            &cached_hotkeys.cycle_case,
+                            vk_code,
+                            ctrl,
+                            alt,
+                            shift,
+                            win,
+                        ) {
                             handle_cycle_case_hotkey(&state, &app_ctx);
                             continue;
                         }
 
-                        if matches_keydown_hotkey(
-                            &hotkeys.add_to_dictionary,
+                        if matches_parsed_keydown(
+                            &cached_hotkeys.add_dict,
                             vk_code,
                             ctrl,
                             alt,
@@ -377,21 +426,32 @@ pub fn start_daemon(app: AppHandle) {
                             continue;
                         }
 
-                        // Map standard editing/navigation keys
+                        // Map standard editing/navigation keys without calling ToUnicodeEx
                         let input = match vk_code {
                             VK_BACK => EngineInput::Backspace,
-                            VK_SPACE => EngineInput::Space { layout },
-                            VK_TAB => EngineInput::Tab { layout },
-                            VK_RETURN => EngineInput::Enter { layout },
-                            VK_LEFT | VK_UP | VK_RIGHT | VK_DOWN | VK_HOME | VK_END | VK_PRIOR
-                            | VK_NEXT | VK_DELETE => EngineInput::ResetContext,
-                            _ => match ch {
-                                Some(c) => EngineInput::Char { ch: c, layout },
-                                None => continue,
+                            VK_SPACE => EngineInput::Space {
+                                layout: state.platform.current_layout(),
                             },
+                            VK_TAB => EngineInput::Tab {
+                                layout: state.platform.current_layout(),
+                            },
+                            VK_RETURN => EngineInput::Enter {
+                                layout: state.platform.current_layout(),
+                            },
+                            VK_LEFT | VK_UP | VK_RIGHT | VK_DOWN | VK_HOME | VK_END | VK_PRIOR
+                            | VK_NEXT | VK_DELETE | VK_ESCAPE => EngineInput::ResetContext,
+                            _ => {
+                                let (ch, layout) = state
+                                    .platform
+                                    .resolve_key(vk_code, scan_code, shift, caps_lock);
+                                match ch {
+                                    Some(c) => EngineInput::Char { ch: c, layout },
+                                    None => continue,
+                                }
+                            }
                         };
 
-                        run_engine_input(&state, input, &app_ctx);
+                        run_engine_input(&state, input, &app_ctx, 5);
                     }
                 }
             }
@@ -399,7 +459,12 @@ pub fn start_daemon(app: AppHandle) {
         .expect("spawn KeyCraft daemon loop");
 }
 
-fn run_engine_input(state: &AppState, input: EngineInput, app_ctx: &ActiveAppState) {
+fn run_engine_input(
+    state: &AppState,
+    input: EngineInput,
+    app_ctx: &ActiveAppState,
+    settle_ms: u64,
+) {
     let (action, config_to_save) = {
         let Ok(mut eng) = state.engine.lock() else {
             return;
@@ -427,15 +492,17 @@ fn run_engine_input(state: &AppState, input: EngineInput, app_ctx: &ActiveAppSta
             switch_layout,
             ..
         } => {
-            // Brief settle delay so the foreground app finishes inserting the triggering key
-            // from Windows' message queue before our synthetic backspaces arrive.
-            std::thread::sleep(std::time::Duration::from_millis(12));
+            if settle_ms > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(settle_ms));
+            }
             let _ = state
                 .platform
                 .replace_text(backspace_count, &text, switch_layout);
         }
         EngineAction::InsertText { text, .. } => {
-            std::thread::sleep(std::time::Duration::from_millis(12));
+            if settle_ms > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(settle_ms));
+            }
             let _ = state.platform.insert_text(&text);
         }
     }
@@ -457,7 +524,7 @@ fn handle_convert_hotkey(state: &AppState, app_ctx: &ActiveAppState) {
         .unwrap_or(false);
 
     if !converted_selection {
-        run_engine_input(state, EngineInput::ManualConvertLastWord, app_ctx);
+        run_engine_input(state, EngineInput::ManualConvertLastWord, app_ctx, 0);
     }
 }
 
@@ -477,7 +544,7 @@ fn handle_cycle_case_hotkey(state: &AppState, app_ctx: &ActiveAppState) {
         .unwrap_or(false);
 
     if !cycled_selection {
-        run_engine_input(state, EngineInput::ManualCycleCaseLastWord, app_ctx);
+        run_engine_input(state, EngineInput::ManualCycleCaseLastWord, app_ctx, 0);
     }
 }
 
