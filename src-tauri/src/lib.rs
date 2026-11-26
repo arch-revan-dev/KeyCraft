@@ -75,6 +75,10 @@ pub fn sync_platform_screenshot_hotkeys(
 
 pub fn run() {
     logger::install_panic_hook();
+    if !keycraft_platform::acquire_single_instance_guard() {
+        logger::log_line("INFO", "KeyCraft already running — exiting duplicate instance");
+        return;
+    }
     logger::log_line("INFO", concat!("KeyCraft v", env!("CARGO_PKG_VERSION"), " starting"));
 
     let mut initial_cfg = store::load_config();

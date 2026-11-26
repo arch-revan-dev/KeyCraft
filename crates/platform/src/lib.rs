@@ -183,6 +183,18 @@ pub trait PlatformBackend: Send + Sync {
     fn set_os_snipping_prtsc_enabled(&self, enabled: bool) -> PlatformResult<()>;
 }
 
+/// Ensure only a single KeyCraft daemon instance runs per user session.
+pub fn acquire_single_instance_guard() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        windows::autostart::acquire_single_instance_mutex()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        true
+    }
+}
+
 /// Construct the native backend for the current target OS.
 pub fn create_platform_backend() -> PlatformResult<Box<dyn PlatformBackend>> {
     #[cfg(target_os = "windows")]

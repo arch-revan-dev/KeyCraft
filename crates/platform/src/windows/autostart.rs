@@ -186,3 +186,23 @@ pub fn set_windows_snipping_prtsc_enabled(enabled: bool) -> PlatformResult<()> {
 
     Ok(())
 }
+
+/// Acquire a process-wide named Win32 mutex so only one KeyCraft daemon runs per desktop session.
+/// Returns `true` if this process is the primary instance, or `false` if another instance is active.
+pub fn acquire_single_instance_mutex() -> bool {
+    const ERROR_ALREADY_EXISTS: u32 = 183;
+    extern "system" {
+        fn CreateMutexW(attrs: *const core::ffi::c_void, initial_owner: i32, name: *const u16) -> isize;
+        fn GetLastError() -> u32;
+    }
+
+    let name = to_wide("Local\\KeyCraftSingleInstanceMutex");
+    unsafe {
+        let handle = CreateMutexW(core::ptr::null(), 0, name.as_ptr());
+        if handle == 0 {
+            return true;
+        }
+        // Keep handle open for process lifetime; OS releases it automatically on exit.
+        GetLastError() != ERROR_ALREADY_EXISTS
+    }
+}

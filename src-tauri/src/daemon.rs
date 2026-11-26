@@ -172,6 +172,10 @@ pub fn start_daemon(app: AppHandle) {
     std::thread::Builder::new()
         .name("keycraft-daemon-loop".to_string())
         .spawn(move || {
+            let self_exe_name = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+                .unwrap_or_else(|| "keycraft.exe".to_string());
             let mut last_process = String::new();
             let mut last_layout = Language::En;
             let mut last_screenshot_at: Option<std::time::Instant> = None;
@@ -299,9 +303,10 @@ pub fn start_daemon(app: AppHandle) {
                             is_password_field: focus.is_password_field,
                         };
 
-                        // Never touch password fields or KeyCraft's own Settings/Sandbox window
+                        // Never touch password fields or KeyCraft's own Settings/Sandbox window (regardless of exe filename)
                         if app_ctx.is_password_field
                             || app_ctx.process_name.eq_ignore_ascii_case("keycraft.exe")
+                            || app_ctx.process_name.eq_ignore_ascii_case(&self_exe_name)
                         {
                             if let Ok(mut eng) = state.engine.lock() {
                                 eng.reset_buffer();

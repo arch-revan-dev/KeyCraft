@@ -21,10 +21,11 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
     GetWindowLongPtrW, GetWindowRect, LoadCursorW, PostQuitMessage, RegisterClassW,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, GWLP_USERDATA, HTCAPTION,
-    IDC_SIZEALL, MSG, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SW_SHOW, WM_DESTROY, WM_KEYDOWN,
-    WM_LBUTTONDBLCLK, WM_MOUSEWHEEL, WM_NCHITTEST, WM_NCDESTROY, WM_PAINT, WM_RBUTTONUP,
-    WNDCLASSW, WS_BORDER, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, CS_DBLCLKS, GWLP_USERDATA,
+    HTCAPTION, IDC_SIZEALL, MSG, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOZORDER, SW_SHOW, WM_DESTROY,
+    WM_KEYDOWN, WM_LBUTTONDBLCLK, WM_MOUSEWHEEL, WM_NCHITTEST, WM_NCDESTROY, WM_NCLBUTTONDBLCLK,
+    WM_NCRBUTTONUP, WM_PAINT, WM_RBUTTONUP, WNDCLASSW, WS_BORDER, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_POPUP,
 };
 
 use crate::{PlatformError, PlatformResult};
@@ -49,7 +50,8 @@ unsafe extern "system" fn pin_wnd_proc(
     let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut PinState;
     match msg {
         WM_NCHITTEST => LRESULT(HTCAPTION as isize),
-        WM_RBUTTONUP | WM_LBUTTONDBLCLK => {
+        // Because WM_NCHITTEST returns HTCAPTION for drag-anywhere, Windows delivers NC mouse events!
+        WM_RBUTTONUP | WM_NCRBUTTONUP | WM_LBUTTONDBLCLK | WM_NCLBUTTONDBLCLK => {
             let _ = DestroyWindow(hwnd);
             LRESULT(0)
         }
@@ -178,6 +180,7 @@ pub fn spawn_pinned_screenshot(png_bytes: Vec<u8>, screen_x: i32, screen_y: i32)
             unsafe {
                 let hinstance = GetModuleHandleW(None).unwrap_or_default();
                 let wc = WNDCLASSW {
+                    style: CS_DBLCLKS,
                     lpfnWndProc: Some(pin_wnd_proc),
                     hInstance: hinstance.into(),
                     hCursor: LoadCursorW(None, IDC_SIZEALL).unwrap_or_default(),

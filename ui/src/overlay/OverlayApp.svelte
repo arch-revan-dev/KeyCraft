@@ -61,7 +61,14 @@
   let cursor = $state({ x: 0, y: 0, visible: false });
 
   let textPrompt = $state<{ x: number; y: number; value: string } | null>(null);
+  let textInputEl = $state<HTMLInputElement | null>(null);
   let toolbarWidth = $state(680);
+
+  $effect(() => {
+    if (textPrompt && textInputEl) {
+      textInputEl.focus();
+    }
+  });
 
   const TOOLS: { id: AnnotationTool; label: string; icon: typeof ArrowUpRight }[] = [
     { id: 'arrow', label: 'Стрелка', icon: ArrowUpRight },
@@ -146,19 +153,28 @@
 
     const onKey = (e: KeyboardEvent) => {
       if (textPrompt) return;
+      const mod = e.ctrlKey || e.metaKey;
+      const isZ = e.code === 'KeyZ' || e.key.toLowerCase() === 'z';
+      const isY = e.code === 'KeyY' || e.key.toLowerCase() === 'y';
+      const isC = e.code === 'KeyC' || e.key.toLowerCase() === 'c';
+      const isS = e.code === 'KeyS' || e.key.toLowerCase() === 's';
+
       if (e.key === 'Escape') {
         e.preventDefault();
         screenshotClose();
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      } else if (mod && isZ) {
         e.preventDefault();
         if (e.shiftKey) redo();
         else undo();
-      } else if (e.key === 'Enter' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c')) {
+      } else if (mod && isY) {
+        e.preventDefault();
+        redo();
+      } else if (e.key === 'Enter' || (mod && isC)) {
         if (selection && selection.w > 4 && selection.h > 4) {
           e.preventDefault();
           handleCopy();
         }
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      } else if (mod && isS) {
         if (selection && selection.w > 4 && selection.h > 4) {
           e.preventDefault();
           handleSave();
@@ -289,7 +305,11 @@
   }
 
   function onPointerDown(e: PointerEvent) {
-    if (e.button !== 0 || textPrompt) return;
+    if (e.button !== 0) return;
+    if (textPrompt) {
+      commitTextPrompt();
+      return;
+    }
     const x = e.clientX;
     const y = e.clientY;
 
@@ -431,16 +451,19 @@
   }
 
   async function handleCopy() {
+    commitTextPrompt();
     const png = renderExport();
     if (png) await screenshotCopyPng(png);
   }
 
   async function handleSave() {
+    commitTextPrompt();
     const png = renderExport();
     if (png) await screenshotSavePng(png);
   }
 
   async function handlePin() {
+    commitTextPrompt();
     const png = renderExport();
     if (!png || !selection) return;
     const sx = (meta?.origin_x ?? 0) + Math.round(selection.x * scaleX);
@@ -493,14 +516,23 @@
 
   {#if textPrompt}
     <input
+      bind:this={textInputEl}
       type="text"
       class="inline-text-input"
       style={`left:${textPrompt.x}px;top:${textPrompt.y}px;color:${activeColor}`}
       bind:value={textPrompt.value}
       placeholder="Текст…"
+      onpointerdown={(e) => e.stopPropagation()}
       onkeydown={(e) => {
-        if (e.key === 'Enter') commitTextPrompt();
-        if (e.key === 'Escape') textPrompt = null;
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          commitTextPrompt();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          textPrompt = null;
+        }
       }}
       onblur={commitTextPrompt}
     />
@@ -525,7 +557,10 @@
             class:active={activeTool === t.id}
             aria-pressed={activeTool === t.id}
             title={t.label}
-            onclick={() => (activeTool = t.id)}
+            onclick={() => {
+              commitTextPrompt();
+              activeTool = t.id;
+            }}
           >
             <Icon size={14} strokeWidth={1.5} />
           </button>
