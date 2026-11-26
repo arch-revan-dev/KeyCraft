@@ -123,6 +123,7 @@ pub fn run() {
             commands::import_config_json,
             commands::toggle_enabled,
             commands::get_runtime_status,
+            commands::set_os_snipping_prtsc_enabled,
             commands::add_dictionary_word,
             commands::list_running_apps,
             commands::sandbox_process_event,

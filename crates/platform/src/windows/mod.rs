@@ -140,11 +140,24 @@ impl PlatformBackend for WindowsBackend {
         window: &str,
         fullscreen: &str,
     ) -> Vec<String> {
+        if let Ok(guard) = self.hook_handle.lock() {
+            if let Some(hook) = guard.as_ref() {
+                hook.sync_prtsc_bindings(enabled, region, window, fullscreen);
+            }
+        }
         if let Ok(guard) = self.hotkey_manager.lock() {
             if let Some(mgr) = guard.as_ref() {
                 return mgr.sync(enabled, region, window, fullscreen);
             }
         }
         Vec::new()
+    }
+
+    fn is_os_snipping_prtsc_enabled(&self) -> bool {
+        autostart::is_windows_snipping_prtsc_enabled()
+    }
+
+    fn set_os_snipping_prtsc_enabled(&self, enabled: bool) -> PlatformResult<()> {
+        autostart::set_windows_snipping_prtsc_enabled(enabled)
     }
 }

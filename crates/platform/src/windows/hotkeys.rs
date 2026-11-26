@@ -26,6 +26,56 @@ const ID_SHOT_WINDOW: i32 = 102;
 const ID_SHOT_FULLSCREEN: i32 = 103;
 const WM_APP_SYNC_HOTKEYS: u32 = WM_APP + 17;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PrtScCombo {
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+    pub win: bool,
+}
+
+/// Parse a hotkey spec if and only if its primary key is `PrintScreen` (`VK_SNAPSHOT`).
+pub(crate) fn parse_prtsc_combo(spec: &str) -> Option<PrtScCombo> {
+    let trimmed = spec.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut ctrl = false;
+    let mut alt = false;
+    let mut shift = false;
+    let mut win = false;
+    let mut key_part: Option<&str> = None;
+
+    for part in trimmed.split('+').map(str::trim) {
+        if part.eq_ignore_ascii_case("Ctrl") || part.eq_ignore_ascii_case("Control") {
+            ctrl = true;
+        } else if part.eq_ignore_ascii_case("Alt") {
+            alt = true;
+        } else if part.eq_ignore_ascii_case("Shift") {
+            shift = true;
+        } else if part.eq_ignore_ascii_case("Win") || part.eq_ignore_ascii_case("Super") {
+            win = true;
+        } else {
+            key_part = Some(part);
+        }
+    }
+
+    let key = key_part?;
+    if matches!(
+        key.to_ascii_lowercase().as_str(),
+        "printscreen" | "prtsc" | "snapshot"
+    ) {
+        Some(PrtScCombo {
+            ctrl,
+            alt,
+            shift,
+            win,
+        })
+    } else {
+        None
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 struct DesiredHotkeys {
     enabled: bool,

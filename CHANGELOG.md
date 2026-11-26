@@ -2,6 +2,14 @@
 
 Все заметные изменения в **KeyCraft** документируются в этом файле в формате [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
+## [0.1.6] — 2026-11-26
+
+### Исправлено и добавлено
+- **Двухуровневый перехват `PrintScreen` (`WH_KEYBOARD_LL` + `RegisterHotKey`) на Windows 11 23H2/24H2:**
+  - `WH_KEYBOARD_LL` теперь перехватывает и подавляет `VK_SNAPSHOT` (как по `WM_KEYDOWN`/`WM_SYSKEYDOWN`, так и для клавиатур, отправляющих только `WM_KEYUP`/`WM_SYSKEYUP`) **до того**, как системный обработчик Ножниц Windows 11 получит нажатие — поэтому `PrintScreen`, `Alt+PrintScreen` и `Ctrl+PrintScreen` запускают KeyCraft без всплывающих Ножниц даже без перезагрузки.
+  - `RegisterHotKey` сохранён вторым слоем для кастомных не-PrintScreen хоткеев и окон с правами администратора (UIPI), с дебаунсом 350 мс против двойного срабатывания.
+- **Тумблер «Отключить перехват PrintScreen в Ножницах Windows 11» в разделе «Скриншотер»:** в один клик снимает или возвращает системную настройку `HKCU\Control Panel\Keyboard\PrintScreenKeyForSnippingEnabled` (`0` / `1`) с рассылкой `WM_SETTINGCHANGE` (`HWND_BROADCAST`), а при активном системном перехвате показывает ненавязчивое уведомление.
+
 ## [0.1.5] — 2026-11-26
 
 ### Исправлено

@@ -21,6 +21,7 @@ pub struct RuntimeStatus {
     pub ru_dict_size: usize,
     pub en_dict_size: usize,
     pub autostart: bool,
+    pub os_snipping_prtsc_enabled: bool,
     pub version: String,
     pub config_path: String,
     pub default_screenshots_dir: String,
@@ -135,10 +136,30 @@ pub fn get_runtime_status(state: State<'_, AppState>) -> Result<RuntimeStatus, S
         ru_dict_size: eng.dictionary().ru_word_count(),
         en_dict_size: eng.dictionary().en_word_count(),
         autostart: state.platform.is_autostart_enabled(),
+        os_snipping_prtsc_enabled: state.platform.is_os_snipping_prtsc_enabled(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         config_path: store::config_path().display().to_string(),
         default_screenshots_dir: store::default_screenshots_dir().display().to_string(),
     })
+}
+
+#[tauri::command]
+pub fn set_os_snipping_prtsc_enabled(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<bool, String> {
+    state
+        .platform
+        .set_os_snipping_prtsc_enabled(enabled)
+        .map_err(|e| e.to_string())?;
+    crate::logger::log_line(
+        "INFO",
+        &format!("Windows PrintScreenKeyForSnippingEnabled set to {enabled}"),
+    );
+    if let Ok(eng) = state.engine.lock() {
+        crate::sync_platform_screenshot_hotkeys(state.platform.as_ref(), eng.config());
+    }
+    Ok(state.platform.is_os_snipping_prtsc_enabled())
 }
 
 #[tauri::command]

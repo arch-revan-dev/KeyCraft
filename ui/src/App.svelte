@@ -173,7 +173,14 @@
         {:else if activeSection === 'apps'}
           <AppRulesView {config} onupdate={handleUpdate} />
         {:else if activeSection === 'screenshot'}
-          <ScreenshotView {config} {status} onupdate={handleUpdate} />
+          <ScreenshotView
+            {config}
+            {status}
+            onupdate={handleUpdate}
+            onrefreshStatus={async () => {
+              status = await getRuntimeStatus();
+            }}
+          />
         {:else if activeSection === 'hotkeys'}
           <HotkeysView {config} onupdate={handleUpdate} />
         {:else if activeSection === 'system'}

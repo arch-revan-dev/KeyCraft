@@ -174,6 +174,7 @@ pub fn start_daemon(app: AppHandle) {
         .spawn(move || {
             let mut last_process = String::new();
             let mut last_layout = Language::En;
+            let mut last_screenshot_at: Option<std::time::Instant> = None;
 
             while let Ok(evt) = rx.recv() {
                 let state = app.state::<AppState>();
@@ -229,12 +230,19 @@ pub fn start_daemon(app: AppHandle) {
                         }
                     }
                     PlatformEvent::ScreenshotHotkey(mode) => {
+                        let now = std::time::Instant::now();
+                        let debounced = last_screenshot_at
+                            .is_some_and(|prev| now.duration_since(prev).as_millis() < 350);
+                        if debounced {
+                            continue;
+                        }
                         let shot_enabled = state
                             .engine
                             .lock()
                             .map(|e| e.config().screenshot.enabled)
                             .unwrap_or(true);
                         if shot_enabled {
+                            last_screenshot_at = Some(now);
                             windows_mgr::open_screenshot_overlay_async(app.clone(), mode);
                         }
                     }

@@ -105,4 +105,12 @@ impl PlatformBackend for MacOsBackend {
     ) -> Vec<String> {
         Vec::new()
     }
+
+    fn is_os_snipping_prtsc_enabled(&self) -> bool {
+        false
+    }
+
+    fn set_os_snipping_prtsc_enabled(&self, _enabled: bool) -> PlatformResult<()> {
+        Ok(())
+    }
 }

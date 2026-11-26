@@ -5,24 +5,52 @@
   import Toggle from '../components/Toggle.svelte';
   import SegmentedControl from '../components/SegmentedControl.svelte';
   import KeyRecorder from '../components/KeyRecorder.svelte';
-  import { cloneConfig, createDefaultConfig, triggerScreenshot } from '../lib/ipc';
+  import {
+    cloneConfig,
+    createDefaultConfig,
+    setOsSnippingPrtScEnabled,
+    triggerScreenshot,
+  } from '../lib/ipc';
   import type { KeyCraftConfig, RuntimeStatus } from '../lib/types';
 
   interface Props {
     config: KeyCraftConfig;
     status: RuntimeStatus | null;
     onupdate: (next: KeyCraftConfig) => void;
+    onrefreshStatus?: () => void;
   }
 
-  let { config, status, onupdate }: Props = $props();
+  let { config, status, onupdate, onrefreshStatus }: Props = $props();
 
   const PALETTE = ['#DC2626', '#D97706', '#16A34A', '#2563EB', '#18181B', '#FFFFFF'];
   const DEFAULT_HOTKEYS = createDefaultConfig().hotkeys;
+
+  let osSnippingEnabled = $state(false);
+  let osToggleHint = $state('');
+
+  $effect(() => {
+    if (status) {
+      osSnippingEnabled = status.os_snipping_prtsc_enabled;
+    }
+  });
 
   function patch(mutator: (draft: KeyCraftConfig) => void) {
     const next = cloneConfig(config);
     mutator(next);
     onupdate(next);
+  }
+
+  async function toggleWindowsPrtScOverride(takeOverFromWindows: boolean) {
+    try {
+      const stillSnipping = await setOsSnippingPrtScEnabled(!takeOverFromWindows);
+      osSnippingEnabled = stillSnipping;
+      osToggleHint = !stillSnipping
+        ? 'Перехват PrintScreen в Ножницах Windows отключён (PrintScreen передан KeyCraft)'
+        : 'Восстановлен стандартный перехват PrintScreen Ножницами Windows';
+      onrefreshStatus?.();
+    } catch (err) {
+      osToggleHint = err instanceof Error ? err.message : 'Не удалось изменить настройку Windows';
+    }
   }
 </script>
 
@@ -38,7 +66,26 @@
         onchange={(v) => patch((c) => (c.screenshot.enabled = v))}
       />
     </SettingRow>
+
+    <SettingRow
+      title="Отключить перехват PrintScreen в Ножницах Windows 11"
+      description="Снимает системную привязку «Клавиша Print Screen для открытия Ножниц» (HKCU\\Control Panel\\Keyboard)"
+    >
+      <Toggle
+        checked={!osSnippingEnabled}
+        ariaLabel="Отключить перехват PrintScreen в Ножницах Windows 11"
+        onchange={toggleWindowsPrtScOverride}
+      />
+    </SettingRow>
   </SettingGroup>
+
+  {#if config.screenshot.enabled && osSnippingEnabled}
+    <div class="inline-warn">
+      В Windows 11 сейчас включена системная привязка PrintScreen к Ножницам. В обычных окнах KeyCraft перехватывает PrintScreen напрямую, но для окон с правами администратора лучше выключить системный перехват тумблером выше.
+    </div>
+  {:else if osToggleHint}
+    <div class="inline-ok">{osToggleHint}</div>
+  {/if}
 
   <div class="shot-body" class:disabled={!config.screenshot.enabled}>
   <div class="quick-capture">
@@ -176,6 +223,22 @@
   .shot-body.disabled {
     opacity: 0.45;
     pointer-events: none;
+  }
+
+  .inline-warn {
+    font-size: 12px;
+    color: var(--text-primary);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-md);
+    padding: 9px 12px;
+  }
+
+  .inline-ok {
+    font-size: 12px;
+    color: var(--semantic-success);
+    padding: 0 2px;
   }
 
   .quick-capture {

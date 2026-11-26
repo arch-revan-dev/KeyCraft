@@ -97,6 +97,7 @@ export interface RuntimeStatus {
   ru_dict_size: number;
   en_dict_size: number;
   autostart: boolean;
+  os_snipping_prtsc_enabled: boolean;
   version: string;
   config_path: string;
   default_screenshots_dir: string;

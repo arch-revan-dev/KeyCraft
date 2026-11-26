@@ -175,6 +175,12 @@ pub trait PlatformBackend: Send + Sync {
         window: &str,
         fullscreen: &str,
     ) -> Vec<String>;
+
+    /// Check whether Windows 11's built-in Snipping Tool is currently hijacking `PrintScreen`.
+    fn is_os_snipping_prtsc_enabled(&self) -> bool;
+
+    /// Toggle Windows 11's `PrintScreenKeyForSnippingEnabled` setting so `PrintScreen` is freed for KeyCraft.
+    fn set_os_snipping_prtsc_enabled(&self, enabled: bool) -> PlatformResult<()>;
 }
 
 /// Construct the native backend for the current target OS.

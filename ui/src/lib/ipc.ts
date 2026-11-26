@@ -132,12 +132,18 @@ export async function getRuntimeStatus(): Promise<RuntimeStatus> {
       ru_dict_size: 50000,
       en_dict_size: 50000,
       autostart: browserPreviewConfig.system.autostart,
-      version: '0.1.0',
+      os_snipping_prtsc_enabled: false,
+      version: '0.1.6',
       config_path: 'C:\\Users\\user\\AppData\\Roaming\\KeyCraft\\config\\config.json',
       default_screenshots_dir: 'C:\\Users\\user\\Pictures\\KeyCraft',
     };
   }
   return invoke<RuntimeStatus>('get_runtime_status');
+}
+
+export async function setOsSnippingPrtScEnabled(enabled: boolean): Promise<boolean> {
+  if (!isTauriRuntime()) return enabled;
+  return invoke<boolean>('set_os_snipping_prtsc_enabled', { enabled });
 }
 
 export async function listRunningApps(): Promise<RunningAppInfo[]> {
